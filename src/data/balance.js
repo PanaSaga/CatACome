@@ -44,19 +44,21 @@ export const clinicCost = (n, grade) => Math.min(5 * Math.pow(2, n - 1), clinicC
 export const bankFeeRate = (grade) => grade / 100;
 
 // ── 소나 (§3-3) ──────────────────────────────────────────────────
-// 반경은 계획서 값(16·20·24·28·30타일)의 5배다. 탐지 반경과 화면에 퍼지는
-// 파면이 같은 값을 쓰므로, 여기만 고치면 HUD·상점 표기까지 함께 따라온다.
 export const SONAR = [
-  { r: 80, cd: 7.0 },
-  { r: 100, cd: 5.5 },
-  { r: 120, cd: 4.0 },
-  { r: 140, cd: 2.5 },
-  { r: 150, cd: 1.5 },
+  { r: 16, cd: 7.0 },
+  { r: 20, cd: 5.5 },
+  { r: 24, cd: 4.0 },
+  { r: 28, cd: 2.5 },
+  { r: 30, cd: 1.5 },
 ];
-// 5배 넓어진 파면이 화면(확대 시 반경 약 160px)을 한순간에 스쳐 지나가지 않도록
-// 퍼지는 시간을 늘렸다. 탐지도 이 시간에 걸쳐 순차로 이뤄진다.
-export const SONAR_WAVE_TIME = 1.4;
-export const SONAR_RIPPLES = 4;     // 초음파처럼 겹쳐 나가는 동심원 수
+export const SONAR_WAVE_TIME = 0.4;
+
+// 감지된 대상(상자·고양이·정거장·플래그·적)의 표기.
+// 핵은 그대로 두고, 그 자리에서 초음파처럼 링이 퍼져 나가 눈에 잡히게 한다.
+export const MARK_R = 7;          // 핵 반지름 (월드 px)
+export const MARK_SPREAD = 5;     // 링이 퍼지는 최대 배수 → 반지름 35px
+export const MARK_RINGS = 3;      // 동시에 퍼지는 링 수
+export const MARK_PULSE_T = 1.1;  // 링 한 겹이 끝까지 퍼지는 시간(초)
 export const SONAR_MOLE_PULL = 3; // 타일
 
 // ── 소모 아이템 (§3-4) ───────────────────────────────────────────

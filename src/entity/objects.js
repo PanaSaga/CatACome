@@ -340,14 +340,21 @@ export class Objects {
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = 1;
         ctx.strokeRect(x + 0.5, y + 2.5, 15, 14);
-        this.drawPrompt(ctx, x + 8, y - 6, '[E] 열기');
+        this.drawPrompt(ctx, x + 8, this.promptY(c.y) - cam.y, '[E] 열기');
       }
     }
 
     // 고양이
     for (const c of this.cats) {
       if (c.carried) continue;
-      this.drawCat(ctx, c.x * TILE - cam.x, c.y * TILE - cam.y);
+      const x = c.x * TILE - cam.x, y = c.y * TILE - cam.y;
+      this.drawCat(ctx, x, y);
+      if (target && target.kind === 'cat' && target.ref === c) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 0.5, 15, 15);
+        this.drawPrompt(ctx, x + 8, this.promptY(c.y) - cam.y, '[E] 업기');
+      }
     }
     // 업고 있는 고양이
     const p = this.game.player;
@@ -367,7 +374,19 @@ export class Objects {
       ctx.lineTo(x + 9, y + 4);
       ctx.closePath();
       ctx.fill();
+      if (target && target.kind === 'flag' && target.ref === f) {
+        this.drawPrompt(ctx, x + 8, this.promptY(f.y, 12) - cam.y, '[E] 읽기');
+      }
     }
+  }
+
+  /**
+   * 안내를 놓을 세로 위치. 대상 위에서 파 내려온 경우(플레이어가 더 높을 때)
+   * 위에 그리면 라벨이 캐릭터 몸을 덮으므로 아래로 뒤집는다.
+   */
+  promptY(ty, up = 6) {
+    const oy = ty * TILE;
+    return this.game.player.cy < oy + TILE / 2 ? oy + TILE + 12 : oy - up;
   }
 
   /**
@@ -379,11 +398,11 @@ export class Objects {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const sx = x * ZOOM, sy = y * ZOOM;
-    ctx.font = 'bold 14px monospace';
+    ctx.font = 'bold 28px monospace';
     ctx.textAlign = 'center';
-    const w = ctx.measureText(text).width + 10;
+    const w = ctx.measureText(text).width + 20;
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(sx - w / 2, sy - 13, w, 17);
+    ctx.fillRect(sx - w / 2, sy - 26, w, 34);
     ctx.fillStyle = '#fff';
     ctx.fillText(text, sx, sy);
     ctx.textAlign = 'left';

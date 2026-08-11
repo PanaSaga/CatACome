@@ -1,6 +1,7 @@
 // 소나 5단계 (§3-3). Lv1 흰 링만 · Lv2 색 구분 · Lv3 정거장 화살표 + 자동 토글 · Lv5 거리 병기
 import {
-  SONAR, SONAR_WAVE_TIME, SONAR_RIPPLES, SONAR_MOLE_PULL, SONAR_COLOR, TILE, M_PER_TILE,
+  SONAR, SONAR_WAVE_TIME, SONAR_MOLE_PULL, SONAR_COLOR, TILE, M_PER_TILE,
+  MARK_R, MARK_SPREAD, MARK_RINGS, MARK_PULSE_T,
 } from '../data/balance.js';
 
 const ENEMY_MARK_LIFE = 4;
@@ -13,6 +14,7 @@ export class Sonar {
 
   reset() {
     this.cd = 0;
+    this.t = 0; // 표기 링 위상
     this.auto = false;
     this.waves = [];
     this.revealed = new Map(); // 정적 대상 — 런 동안 유지
@@ -27,6 +29,7 @@ export class Sonar {
 
   update(dt, input) {
     this.cd = Math.max(0, this.cd - dt);
+    this.t += dt;
     for (let i = this.waves.length - 1; i >= 0; i--) {
       this.waves[i].t += dt;
       if (this.waves[i].t > SONAR_WAVE_TIME + 0.35) this.waves.splice(i, 1);
@@ -84,36 +87,46 @@ export class Sonar {
   }
 
   draw(ctx, cam) {
-    // 파면 — 선두 링 뒤로 여러 겹이 따라 나가는 초음파 형태
+    // 파면
     for (const w of this.waves) {
-      const front = Math.min(1, w.t / SONAR_WAVE_TIME);
+      const r = w.r * Math.min(1, w.t / SONAR_WAVE_TIME);
       const a = Math.max(0, 1 - w.t / (SONAR_WAVE_TIME + 0.35));
-      const cx = w.x - cam.x, cy = w.y - cam.y;
-      for (let i = 0; i < SONAR_RIPPLES; i++) {
-        // 뒤 링은 늦게 출발한 것처럼 진행도를 빼서 겹쳐 나가게 한다
-        const p = front - i * 0.13;
-        if (p <= 0) continue;
-        ctx.strokeStyle = `rgba(150,230,255,${0.5 * a * (1 - i / SONAR_RIPPLES)})`;
-        ctx.lineWidth = i === 0 ? 3 : 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, w.r * p, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      ctx.strokeStyle = `rgba(150,230,255,${0.5 * a})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(w.x - cam.x, w.y - cam.y, r, 0, Math.PI * 2);
+      ctx.stroke();
     }
 
     const colored = this.level >= 2;
+    /**
+     * 감지된 대상 표기 — 위치를 정확히 알려주는 핵 + 그 자리에서 최대 5배까지
+     * 퍼져 나가는 링 여러 겹(초음파). 링은 계속 반복돼 파묻힌 대상이 어디 있는지
+     * 멀리서도 눈에 잡힌다.
+     */
     const mark = (x, y, kind, alpha = 1) => {
       const col = colored ? (SONAR_COLOR[kind] || '#fff') : '#ffffff';
-      ctx.globalAlpha = alpha;
+      const sx = x - cam.x, sy = y - cam.y;
+      // 퍼지는 링
       ctx.strokeStyle = col;
+      for (let i = 0; i < MARK_RINGS; i++) {
+        const p = ((this.t / MARK_PULSE_T) + i / MARK_RINGS) % 1;
+        ctx.globalAlpha = alpha * 0.55 * (1 - p);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(sx, sy, MARK_R * (1 + p * (MARK_SPREAD - 1)), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // 핵
+      ctx.globalAlpha = alpha;
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x - cam.x, y - cam.y, 7, 0, Math.PI * 2);
+      ctx.arc(sx, sy, MARK_R, 0, Math.PI * 2);
       ctx.stroke();
       ctx.fillStyle = col;
       ctx.globalAlpha = alpha * 0.35;
       ctx.beginPath();
-      ctx.arc(x - cam.x, y - cam.y, 7, 0, Math.PI * 2);
+      ctx.arc(sx, sy, MARK_R, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = 1;
     };
