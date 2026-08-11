@@ -3,6 +3,10 @@ name: Deploy static site to GitHub Pages
 on:
   push:
     branches:
+      # github-pages 환경 보호 규칙이 기본 브랜치에서만 배포를 허용한다.
+      # 다른 브랜치에서 밀면 러너 배정 전에 거부되므로(스텝 0개 즉시 실패)
+      # 실제 배포는 기본 브랜치 푸시로만 일어난다.
+      - claude/repo-permissions-check-1q7bu2
       - main
       - claude/github-pages-game-mpy8g1
   workflow_dispatch:
