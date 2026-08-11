@@ -134,24 +134,28 @@ export const CHEST_GRADES = [
 export const CAT_SPACING_M = [20, 30];
 
 // ── 정거장 (§5-6) ────────────────────────────────────────────────
+// 간격(n) = min(50 × 1.15^(n−2), 300) 을 5m 단위로 정리한 값이 계획서 표다.
+// 곡선을 다시 계산하면 표와 1~5m씩 어긋나므로 E1~E14는 표를 그대로 쓰고,
+// E15부터 +300m씩 이어간다.
+const STATION_TABLE = [50, 100, 160, 225, 300, 385, 490, 605, 735, 890, 1065, 1270, 1500, 1770];
+
 export function stationDepths(count = 40) {
-  const out = [50];
-  for (let n = 2; n <= count; n++) {
-    const gap = Math.min(50 * Math.pow(1.15, n - 2), 300);
-    out.push(Math.round(out[out.length - 1] + gap));
-  }
+  const out = STATION_TABLE.slice(0, count);
+  while (out.length < count) out.push(out[out.length - 1] + 300);
   return out;
 }
 export const STATION_DEPTHS = stationDepths();
 
 // ── 배경 (§7-3) ──────────────────────────────────────────────────
+// 배경은 파낸 공간(빈 곳)에 그대로 보이는 색이다. 채도·명도를 낮게 잡아야
+// 공동이 "풀밭"이 아니라 "빈 굴"로 읽힌다.
 export const BG_STOPS = [
-  { m: 0, c: [0x5a, 0x7a, 0x4a] },
-  { m: 50, c: [0x4a, 0x5c, 0x38] },
-  { m: 160, c: [0x4a, 0x38, 0x26] },
-  { m: 400, c: [0x2a, 0x1e, 0x16] },
-  { m: 700, c: [0x14, 0x10, 0x0c] },
-  { m: 1000, c: [0x0a, 0x09, 0x08] },
+  { m: 0, c: [0x3c, 0x4e, 0x31] },
+  { m: 50, c: [0x33, 0x3f, 0x28] },
+  { m: 160, c: [0x36, 0x28, 0x1b] },
+  { m: 400, c: [0x20, 0x17, 0x11] },
+  { m: 700, c: [0x10, 0x0d, 0x0a] },
+  { m: 1000, c: [0x07, 0x06, 0x06] },
 ];
 export const SKY = '#7ec8f0';
 export const SKY_LOW = '#bfe4f7';

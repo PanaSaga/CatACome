@@ -2,7 +2,9 @@ name: Deploy static site to GitHub Pages
 
 on:
   push:
-    branches: [claude/repo-permissions-check-1q7bu2]
+    branches:
+      - main
+      - claude/github-pages-game-mpy8g1
   workflow_dispatch:
 
 permissions:
@@ -28,9 +30,14 @@ jobs:
         with:
           enablement: true
       - name: Prepare site
+        # 빌드 단계가 없는 순수 ES 모듈 정적 사이트다. 게임 파일만 골라 담는다.
         run: |
           mkdir -p dist
-          cp index.html dist/
+          cp index.html styles.css dist/
+          cp -R src dist/
+          touch dist/.nojekyll
+          echo "--- 배포 대상 ---"
+          find dist -type f | sort
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
