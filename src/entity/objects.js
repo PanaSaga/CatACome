@@ -11,6 +11,8 @@ export const SURFACE_SPAWN = { x: HOUSE.doorX, y: -3 };
 const CAT_BAND_M = 25;
 const ITEM_KINDS = ['bomb', 'drill', 'laser', 'flag'];
 const INTERACT_R = 2.5; // 타일 — 상자·고양이·플래그 공통 사거리
+const DROP_G = 620;     // px/s² — 발밑이 사라진 상자·고양이의 낙하 가속
+const DROP_MAX_V = 260; // px/s
 
 export class Objects {
   constructor(game) {
@@ -41,9 +43,11 @@ export class Objects {
     for (const s of gen.stations) {
       if (Math.floor(s.y / CHUNK) !== cy) continue;
       if (Math.floor(s.x / CHUNK) !== cx) continue;
-      if (this.stations.some((t) => t.index === s.index)) continue;
+      // 같은 깊이에 여러 대가 있으므로 index가 아니라 개별 id로 중복을 판단한다
+      const id = 'S' + s.index + ':' + s.sub;
+      if (this.stations.some((t) => t.id === id)) continue;
       this.stations.push({
-        id: 'S' + s.index, index: s.index, x: s.x, y: s.y,
+        id, index: s.index, sub: s.sub, x: s.x, y: s.y,
         depthM: s.depthM, discovered: false, cats: 0,
       });
     }
@@ -62,6 +66,7 @@ export class Objects {
         if (!this.buriable(tx, ty)) continue;
         const grade = this.rollChestGrade(gen.maxHardnessAround(tx, ty, 3), rnd);
         this.chests.push({ id: this.id('C'), x: tx, y: ty, grade, opened: false });
+        this.hollow(tx, ty);
         break;
       }
     }
@@ -76,8 +81,39 @@ export class Objects {
       if (Math.floor(tx / CHUNK) !== cx) continue;
       if (this.cats.some((c) => c.band === b)) continue;
       const spot = this.findBuriable(tx, ty);
-      if (spot) this.cats.push({ id: this.id('K'), band: b, x: spot.x, y: spot.y, carried: false });
+      if (spot) {
+        this.cats.push({ id: this.id('K'), band: b, x: spot.x, y: spot.y, carried: false });
+        this.hollow(spot.x, spot.y);
+      }
     }
+  }
+
+  /**
+   * 대상이 들어앉을 1타일 공간을 비운다. 사방은 암반이라 파내야 닿고,
+   * 발밑 암반을 파내면 대상이 아래로 떨어진다 (updateDrops).
+   */
+  hollow(tx, ty) {
+    this.game.world.set(tx, ty, 0);
+  }
+
+  /** 발밑이 사라지면 상자·고양이도 떨어진다 */
+  updateDrops(dt) {
+    const world = this.game.world;
+    const fall = (o) => {
+      if (world.isSolid(o.x, o.y + 1)) {
+        if (o.oy) { o.oy = 0; o.vy = 0; }
+        return;
+      }
+      o.vy = Math.min((o.vy || 0) + DROP_G * dt, DROP_MAX_V);
+      o.oy = (o.oy || 0) + o.vy * dt;
+      while (o.oy >= TILE) {
+        o.oy -= TILE;
+        o.y += 1;
+        if (world.isSolid(o.x, o.y + 1)) { o.oy = 0; o.vy = 0; return; }
+      }
+    };
+    for (const c of this.chests) if (!c.opened) fall(c);
+    for (const c of this.cats) if (!c.carried) fall(c);
   }
 
   /**
@@ -118,9 +154,11 @@ export class Objects {
   addTutorialContent(spawns) {
     for (const c of spawns.chest || []) {
       this.chests.push({ id: this.id('C'), x: c.x, y: c.y, grade: c.grade, opened: false, tutorial: true });
+      this.hollow(c.x, c.y);
     }
     for (const c of spawns.cat || []) {
       this.cats.push({ id: this.id('K'), band: -1, x: c.x, y: c.y, carried: false });
+      this.hollow(c.x, c.y);
     }
   }
 
@@ -153,6 +191,7 @@ export class Objects {
     const p = this.game.player;
     const pcx = Math.floor(p.cx / TILE / CHUNK), pcy = Math.floor(p.cy / TILE / CHUNK);
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this.ensureChunk(pcx + dx, pcy + dy);
+    this.updateDrops(dt);
     // 근처 정거장은 소나 없이도 발견
     for (const s of this.stations) {
       if (s.discovered) continue;
@@ -327,7 +366,7 @@ export class Objects {
     // 보물상자
     for (const c of this.chests) {
       if (c.opened) continue;
-      const x = c.x * TILE - cam.x, y = c.y * TILE - cam.y;
+      const x = c.x * TILE - cam.x, y = c.y * TILE + (c.oy || 0) - cam.y;
       const col = c.grade === 3 ? '#f2c437' : c.grade === 2 ? '#7ab8f0' : '#b98a5a';
       ctx.fillStyle = '#4a3524';
       ctx.fillRect(x + 1, y + 5, 14, 11);
@@ -347,7 +386,7 @@ export class Objects {
     // 고양이
     for (const c of this.cats) {
       if (c.carried) continue;
-      const x = c.x * TILE - cam.x, y = c.y * TILE - cam.y;
+      const x = c.x * TILE - cam.x, y = c.y * TILE + (c.oy || 0) - cam.y;
       this.drawCat(ctx, x, y);
       if (target && target.kind === 'cat' && target.ref === c) {
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';

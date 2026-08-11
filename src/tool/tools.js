@@ -1,5 +1,8 @@
 // 곡괭이 · 폭탄 · 드릴 · 레이저 · 플래그 · 포션
-import { TILE, PICK_CD, PICK_REACH, GRADE_DMG, ITEM_DMG, BOMB, DRILL, LASER, FLAG, POTION, DYNAMITE } from '../data/balance.js';
+import {
+  TILE, PICK_CD, PICK_REACH, PICK_HIT_R, GRADE_DMG, ITEM_DMG,
+  BOMB, DRILL, LASER, FLAG, POTION, DYNAMITE,
+} from '../data/balance.js';
 import { MAT, matOf, hardnessOf, isDiggable, isBlastable, MAT_COLOR } from '../world/tiles.js';
 
 export const SLOTS = ['pickaxe', 'bomb', 'drill', 'laser', 'flag', 'potion'];
@@ -221,30 +224,45 @@ export class Tools {
     return nearestDigTile(g, world, p.eyeX, p.eyeY, g.aim.dx, g.aim.dy, PICK_REACH);
   }
 
+  /** 커서를 사거리로 자른 지점 — 공격 판정의 중심 */
+  attackPoint() {
+    const p = this.game.player;
+    const aim = this.game.aim;
+    const len = Math.hypot(aim.dx, aim.dy) || 1;
+    const d = Math.min(len, PICK_REACH * TILE);
+    return { x: p.eyeX + (aim.dx / len) * d, y: p.eyeY + (aim.dy / len) * d };
+  }
+
   swingPickaxe(world) {
     const g = this.game;
     const p = g.player;
     const aim = g.aim;
     // 커서는 방향만 정한다. 실제로 파는 건 그 방향에서 가장 가까운 블록.
     const t = this.pickTarget(world);
-    if (!t) return; // 사거리 안에 파낼 게 없다 — 쿨다운도 소모하지 않는다
-    const cx = t.x, cy = t.y;
     const rangeLv = g.profile.upgrades.pickRange;
     const speedLv = g.profile.upgrades.pickSpeed;
-    const area = pickaxeArea(world, cx, cy, rangeLv, p.facing);
+    // 파낼 블록이 없어도 휘두른다 — 공중의 박쥐를 때릴 수 없으면 안 된다
+    const area = t ? pickaxeArea(world, t.x, t.y, rangeLv, p.facing) : null;
+    const hit = this.attackPoint();
 
-    const key = cx + ',' + cy;
-    if (this.multiKey !== key) { this.multiKey = key; this.multiCount = 0; }
-    this.multiCount++;
+    if (area) {
+      const key = t.x + ',' + t.y;
+      if (this.multiKey !== key) { this.multiKey = key; this.multiCount = 0; }
+      this.multiCount++;
+    } else {
+      this.multiKey = null;
+      this.multiCount = 0;
+    }
     this.pickCd = PICK_CD[speedLv - 1];
 
     p.swingPick(aim.dx, aim.dy); // 휘두르는 모션
-    g.sfx.dig(area.maxH);
+    g.sfx.dig(area ? area.maxH : 1);
     g.enemies.onNoise(1); // 곡괭이 1스윙 = 두더지 1타일 (§4-3)
-    g.enemies.hitTiles(area.tiles, GRADE_DMG[g.effGrade() - 1]);
-    g.particles.spawn(aim.x, aim.y, 3, '#c8b9a0', { spread: 1.4, life: 0.25, size: 2 });
+    // 파괴 영역 + 커서 주변 원을 합쳐 한 번만 판정한다
+    g.enemies.hitSwing(area ? area.tiles : [], hit.x, hit.y, PICK_HIT_R, GRADE_DMG[g.effGrade() - 1]);
+    g.particles.spawn(hit.x, hit.y, 3, '#c8b9a0', { spread: 1.4, life: 0.25, size: 2 });
 
-    if (this.multiCount >= area.hits) {
+    if (area && this.multiCount >= area.hits) {
       this.multiCount = 0;
       this.breakTiles(area.tiles, 0);
     }

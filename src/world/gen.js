@@ -4,7 +4,7 @@ import { hash2, uniformFbm3 } from './rng.js';
 import { tutorialOwns, tutorialTile, TUT_HALF_W } from './tutorial.js';
 import {
   WORLD_HALF_W, DEPTH_CAP_M, M_PER_TILE, CHUNK,
-  HARDNESS_BANDS, ORE_TABLE, STATION_DEPTHS,
+  HARDNESS_BANDS, ORE_TABLE, STATION_DEPTHS, STATION_SPACING_X,
 } from '../data/balance.js';
 
 export const depthM = (y) => y * M_PER_TILE;
@@ -20,10 +20,23 @@ const HARD_MAT = [MAT.DIRT, MAT.STONE, MAT.HARD, MAT.OBS];
 export class Gen {
   constructor(seed) {
     this.seed = seed | 0;
-    this.stations = STATION_DEPTHS.map((m, i) => {
-      // E1은 튜토리얼 고정 배치와 좌표를 맞춘다 (§5-1)
-      const x = i === 0 ? 31 : Math.round((hash2(i, 0, this.seed + 91) * 2 - 1) * 250);
-      return { index: i + 1, depthM: m, x, y: yOfDepth(m) };
+    // 같은 깊이에 여러 대를 좌우로 산개한다. 한 층에 한 대뿐이면 800타일 폭에서
+    // 찾을 방법이 사실상 없다 — 특히 정거장이 암반에 묻힌 뒤로는 더 그렇다.
+    this.stations = [];
+    const span = Math.floor((WORLD_HALF_W - 30) / STATION_SPACING_X);
+    STATION_DEPTHS.forEach((m, i) => {
+      const y = yOfDepth(m);
+      for (let k = -span; k <= span; k++) {
+        // E1 중앙 한 대는 튜토리얼 고정 배치와 좌표를 맞춘다 (§5-1)
+        const forced = i === 0 && k === 0;
+        // 깊이마다 흔들어 수직으로 줄 서지 않게 한다
+        const jitter = Math.round((hash2(i, k, this.seed + 91) * 2 - 1) * STATION_SPACING_X * 0.35);
+        const x = forced ? 31 : k * STATION_SPACING_X + jitter;
+        // 튜토리얼 구간은 tutorialTile이 먼저 처리해 승강기 칸이 파이지 않는다.
+        // 그 안에 정거장을 두면 엘리베이터로 내려왔을 때 암반에 박힌다.
+        if (!forced && tutorialOwns(x, y)) continue;
+        this.stations.push({ index: i + 1, sub: k, depthM: m, x, y });
+      }
     });
     this.stationByChunkY = new Map();
     for (const s of this.stations) {

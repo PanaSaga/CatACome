@@ -9,6 +9,12 @@ import { CHUNK, TILE, ORE_TABLE } from '../data/balance.js';
 
 const CH_PX = CHUNK * TILE;
 const CACHE_MAX = 420;
+// 물 흐름 — 발밑이 비면 내려가고, 막히면 "아래가 빈 옆칸"으로만 한 칸 옮긴다.
+// 옆으로 갈 조건에 "그 칸의 아래도 비어 있어야" 한다는 제약이 있어 좌우로
+// 무한히 왕복하지 않고, 물 타일 수도 늘지 않는다(자리를 옮길 뿐이다).
+const WATER_TICK = 0.09;   // 초 — 흐름 갱신 간격
+const WATER_BUDGET = 260;  // 한 번에 평가할 칸 수 상한
+const QUEUE_CAP = 8000;
 
 export function oreDrop(mat, ore) {
   if (!ore) return 0;
@@ -26,6 +32,8 @@ export class World {
     this.edits = new Map();
     this.falling = [];
     this.checkQueue = [];
+    this.waterQueue = [];
+    this.waterT = 0;
     this.onBreak = null; // (x,y,mat,ore) => void
   }
 
@@ -35,6 +43,8 @@ export class World {
     this.edits.clear();
     this.falling.length = 0;
     this.checkQueue.length = 0;
+    this.waterQueue.length = 0;
+    this.waterT = 0;
   }
 
   // ── 청크 ───────────────────────────────────────────────────────
@@ -118,15 +128,71 @@ export class World {
     return { mat: m, ore: o, drop };
   }
 
-  /** 주변 낙하블록 재평가 예약 */
+  /** 주변 낙하블록 · 물 재평가 예약 */
   disturb(x, y) {
     for (let dy = -3; dy <= 0; dy++) {
       for (let dx = -1; dx <= 1; dx++) this.checkQueue.push([x + dx, y + dy]);
     }
+    this.wake(x, y);
   }
 
-  // ── 낙하블록 (모래암반) ────────────────────────────────────────
+  /** 이 칸과 주변 물을 다시 흐르게 한다 */
+  wake(x, y) {
+    if (this.waterQueue.length > QUEUE_CAP) return;
+    for (let dy = -2; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) this.waterQueue.push([x + dx, y + dy]);
+    }
+  }
+
+  /**
+   * 물 한 칸의 이동. 아래가 비면 내려가고, 막히면 아래가 빈 옆칸으로 옮긴다.
+   * @returns {boolean} 움직였는가
+   */
+  waterStep(x, y) {
+    if (this.mat(x, y) !== MAT.WATER) return false;
+    const move = (nx, ny) => {
+      this.set(nx, ny, pack(MAT.WATER));
+      this.set(x, y, pack(MAT.AIR));
+      this.wake(x, y);
+      this.wake(nx, ny);
+      // 물이 빠진 자리 위의 모래도 다시 평가한다
+      this.checkQueue.push([x, y - 1], [x - 1, y - 1], [x + 1, y - 1]);
+      return true;
+    };
+    if (this.mat(x, y + 1) === MAT.AIR) return move(x, y + 1);
+    // 좌우 우선순위를 좌표로 갈라 한쪽으로만 쏠리지 않게 한다
+    const dirs = ((x + y) & 1) ? [1, -1] : [-1, 1];
+    for (const dx of dirs) {
+      if (this.mat(x + dx, y) === MAT.AIR && this.mat(x + dx, y + 1) === MAT.AIR) {
+        return move(x + dx, y);
+      }
+    }
+    return false;
+  }
+
+  updateWater(dt) {
+    this.waterT -= dt;
+    if (this.waterT > 0) return;
+    this.waterT = WATER_TICK;
+    // 이번 틱에 평가할 칸을 따로 떼어낸다. waterStep이 깨우는 칸을 같은 루프에서
+    // 다시 처리하면 물이 한 틱에 수십 칸을 흘러가 순간이동처럼 보인다.
+    const batch = this.waterQueue;
+    this.waterQueue = [];
+    let n = 0;
+    while (batch.length && n++ < WATER_BUDGET) {
+      const [x, y] = batch.pop();
+      this.waterStep(x, y);
+    }
+    // 예산을 넘긴 나머지는 다음 틱으로 넘긴다
+    for (const c of batch) {
+      if (this.waterQueue.length > QUEUE_CAP) break;
+      this.waterQueue.push(c);
+    }
+  }
+
+  // ── 낙하블록 (모래암반) · 물 ───────────────────────────────────
   updateFalling(dt, onLand) {
+    this.updateWater(dt);
     let n = 0;
     while (this.checkQueue.length && n++ < 400) {
       const [x, y] = this.checkQueue.pop();

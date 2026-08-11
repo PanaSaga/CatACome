@@ -1,6 +1,6 @@
 // 적 5종 (§4-3). 등장 조건은 깊이가 아니라 주변 암반 경도.
 import {
-  TILE, ENEMY, ENEMY_HIT_PAD, MOLE_HEAR, MOLE_AUDIBLE, MOLE_SILHOUETTE,
+  TILE, ENEMY, ENEMY_HIT_PAD, MOLE_HEAR, MOLE_AUDIBLE, MOLE_SILHOUETTE, MOLE_STEP_PX,
   CENTI_DIVE, CENTI_RESURFACE, CHUNK,
 } from '../data/balance.js';
 import { hash2, mulberry32 } from '../world/rng.js';
@@ -154,13 +154,29 @@ export class Enemies {
     return false;
   }
 
+  /** 원이 여유 박스에 닿는가 — 중심점 거리가 아니라 박스와의 최단 거리로 잰다 */
+  circleHits(e, px, py, r) {
+    const b = this.hitBox(e);
+    const dx = Math.max(b.x - px, 0, px - (b.x + b.w));
+    const dy = Math.max(b.y - py, 0, py - (b.y + b.h));
+    return Math.hypot(dx, dy) <= r;
+  }
+
   hitCircle(px, py, r, dmg) {
     for (const e of [...this.list]) {
-      const b = this.hitBox(e);
-      // 중심점 거리가 아니라 여유 박스와의 최단 거리로 잰다
-      const dx = Math.max(b.x - px, 0, px - (b.x + b.w));
-      const dy = Math.max(b.y - py, 0, py - (b.y + b.h));
-      if (Math.hypot(dx, dy) <= r) this.hurt(e, dmg);
+      if (this.circleHits(e, px, py, r)) this.hurt(e, dmg);
+    }
+  }
+
+  /**
+   * 곡괭이 한 번의 판정 — 파괴 영역(타일)과 커서 주변 원을 합친다.
+   * 두 판정에 모두 걸린 적이 두 번 맞지 않도록 한 번에 처리한다.
+   */
+  hitSwing(tiles, px, py, r, dmg) {
+    if (dmg <= 0) return;
+    const s = this.tileSet(tiles);
+    for (const e of [...this.list]) {
+      if (this.overlapsTiles(e, s) || this.circleHits(e, px, py, r)) this.hurt(e, dmg);
     }
   }
 
@@ -268,7 +284,7 @@ export class Enemies {
       const p = this.game.player;
       const dx = p.cx - (e.x + e.w / 2), dy = p.cy - (e.y + e.h / 2);
       const l = Math.hypot(dx, dy) || 1;
-      const step = Math.min(e.pending * TILE, 70 * dt);
+      const step = Math.min(e.pending * TILE, MOLE_STEP_PX * dt);
       e.x += (dx / l) * step;
       e.y += (dy / l) * step;
       e.pending -= step / TILE;

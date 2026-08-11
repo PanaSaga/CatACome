@@ -177,7 +177,7 @@ export class Panels {
     for (const s of list) {
       const cur = here === s.id;
       rows.push(`<div class="row ${cur ? 'disabled' : ''}" data-go="${s.id}">
-        <span class="grow">E${s.index}</span>
+        <span class="grow">E${s.index} <span class="dim mono">x ${s.x}</span></span>
         <span class="mono">−${s.depthM} m</span>
         <span class="tag">${cur ? '← 현재 위치' : s.cats ? `고양이 ${s.cats}` : ''}</span></div>`);
     }

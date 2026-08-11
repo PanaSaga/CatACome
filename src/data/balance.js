@@ -36,6 +36,9 @@ export const ORE_NAME = { 1: '구리', 2: '은', 3: '금' };
 // ── 곡괭이 (§3-1) ────────────────────────────────────────────────
 export const PICK_CD = [0.45, 0.38, 0.30, 0.24, 0.18];
 export const PICK_REACH = 5; // 타일
+// 커서 주변 공격 반경. 파괴 대상이 없어도(공중의 박쥐 등) 이 원 안의 적은 맞는다.
+// 적 히트박스 여유(ENEMY_HIT_PAD)와 합쳐지므로 실제 체감은 이보다 넉넉하다.
+export const PICK_HIT_R = 22; // px
 export const GRADE_DMG = [1, 1, 2, 2, 3, 4]; // 등급 1~5 + 6(플래그 버프)
 export const ITEM_DMG = [2, 2, 3, 3, 4, 5]; // 폭탄·드릴·레이저 Lv1~5 + 6(버프)
 
@@ -44,12 +47,15 @@ export const clinicCost = (n, grade) => Math.min(5 * Math.pow(2, n - 1), clinicC
 export const bankFeeRate = (grade) => grade / 100;
 
 // ── 소나 (§3-3) ──────────────────────────────────────────────────
+// 반경은 계획서 값(16·20·24·28·30타일)의 0.5배다. Lv1이 4m로 좁아지고,
+// 계획서의 Lv1 범위(8m)는 Lv5(7.5m)에 가서야 나온다.
+// 쿨다운은 그대로. 여기만 고치면 HUD·상점 표기도 함께 따라온다.
 export const SONAR = [
-  { r: 16, cd: 7.0 },
-  { r: 20, cd: 5.5 },
-  { r: 24, cd: 4.0 },
-  { r: 28, cd: 2.5 },
-  { r: 30, cd: 1.5 },
+  { r: 8, cd: 7.0 },
+  { r: 10, cd: 5.5 },
+  { r: 12, cd: 4.0 },
+  { r: 14, cd: 2.5 },
+  { r: 15, cd: 1.5 },
 ];
 export const SONAR_WAVE_TIME = 0.4;
 
@@ -104,14 +110,17 @@ export const DROWN_GRACE = 3;
 export const LAVA_TICK = 1.2;
 
 // ── 적 (§4-3) ────────────────────────────────────────────────────
+// 속도는 계획서 값(1.1·1.6·1.0·1.3·2.0)의 0.6배다. 플레이어 이동 속도가 2.6이라
+// 예전에는 지네(2.0)·박쥐 돌진(3.0)이 도망칠 수 없을 만큼 빨랐다.
 export const ENEMY = {
-  ant: { hp: 1, minH: 1, speed: 1.1 },
-  bat: { hp: 2, minH: 1, speed: 1.6 },
-  spider: { hp: 3, minH: 1, speed: 1.0 },
-  spiderling: { hp: 1, minH: 1, speed: 1.3 },
+  ant: { hp: 1, minH: 1, speed: 0.66 },
+  bat: { hp: 2, minH: 1, speed: 0.96 },
+  spider: { hp: 3, minH: 1, speed: 0.6 },
+  spiderling: { hp: 1, minH: 1, speed: 0.78 },
   mole: { hp: 2, minH: 2, speed: 0 },
-  centipede: { hp: 6, minH: 3, speed: 2.0 },
+  centipede: { hp: 6, minH: 3, speed: 1.2 },
 };
+export const MOLE_STEP_PX = 42; // 소리를 쫓는 두더지의 초당 이동 상한 (70의 0.6배)
 // 공격 판정용 히트박스 여유. 적 몸집이 타일(16px)보다 작아서 정확히 겨누기 어려우니
 // 피해 판정만 사방으로 넓힌다. 이동·접촉 피해·렌더는 원래 크기(SIZE)를 그대로 쓴다.
 export const ENEMY_HIT_PAD = 6; // px
@@ -152,6 +161,10 @@ export const CAT_SPACING_M = [20, 30];
 // 곡선을 다시 계산하면 표와 1~5m씩 어긋나므로 E1~E14는 표를 그대로 쓰고,
 // E15부터 +300m씩 이어간다.
 const STATION_TABLE = [50, 100, 160, 225, 300, 385, 490, 605, 735, 890, 1065, 1270, 1500, 1770];
+
+// 같은 깊이에 정거장을 좌우로 몇 타일 간격으로 놓을지. 값을 줄이면 더 촘촘해진다.
+// 폭 800타일에 한 층당 약 (800 / 이 값) 대가 생긴다.
+export const STATION_SPACING_X = 60;
 
 export function stationDepths(count = 40) {
   const out = STATION_TABLE.slice(0, count);

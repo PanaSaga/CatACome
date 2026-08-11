@@ -7,15 +7,18 @@ const EPS = 0.01;
 // 충돌 상자를 좌우 1px씩 안쪽으로 줄인다. 플레이어 폭이 타일 폭과 정확히 같으면
 // 1px만 걸친 옆 열이 지지대가 되어, 발밑 타일을 부숴도 떨어지지 않는다 (§11-1 함정 2 변종).
 const COL_INSET = 1;
-export const GRAVITY = 0.55;
-export const TERMINAL = 12;
-// 점프 속도를 계획서 값(−7.92 / −6.9 / −7.05)의 1.3배로 올렸다.
-// 도달 높이는 속도의 제곱에 비례하므로 1단 3.57 → 6.0타일이 된다.
-const JUMP_MUL = 1.3;
-export const JUMP_V = -7.92 * JUMP_MUL;         // 1단 ≈ 6.0타일
-export const AIR_JUMP_V = -6.9 * JUMP_MUL;      // 이단 누적 ≈ 10.6타일
-export const GRAPPLE_KICK_V = -7.05 * JUMP_MUL; // 갈고리 해제 상승
+// 중력을 낮춰 점프·낙하를 느리게 했다. 3배 확대에서는 화면상 이동 속도도
+// 3배라, 계획서 값(0.55)에 점프 1.3배를 얹으니 한 칸 블록에 올라서기가 어려웠다.
+// 높이는 유지하고 속도만 줄이는 쪽으로 잡았다 (h = v²/2g).
+export const GRAVITY = 0.32;
+export const TERMINAL = 9;
+export const JUMP_V = -6.8;         // 1단 ≈ 4.5타일 · 상승 0.35초 (예전 6.0타일 · 0.31초)
+export const AIR_JUMP_V = -6.0;     // 이단 누적 ≈ 8타일
+export const GRAPPLE_KICK_V = -6.2; // 갈고리 해제 상승
 export const RUN_SPEED = 2.6;
+/** 공중 가속. 낮으면 발판에 맞춰 내려서기가 어렵다 */
+const AIR_CONTROL = 0.28;
+const GROUND_CONTROL = 0.35;
 const SWING_TIME = 0.24;
 
 function boxSolid(world, x, y, w, h) {
@@ -149,7 +152,7 @@ export class Player {
       if (input.down('a')) want -= 1;
       if (input.down('d')) want += 1;
       const target = want * RUN_SPEED * speedMul;
-      this.vx += (target - this.vx) * (this.onGround ? 0.35 : 0.18);
+      this.vx += (target - this.vx) * (this.onGround ? GROUND_CONTROL : AIR_CONTROL);
       if (Math.abs(this.vx) < 0.02) this.vx = 0;
     }
 
