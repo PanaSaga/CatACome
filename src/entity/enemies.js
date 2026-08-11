@@ -1,5 +1,8 @@
 // 적 5종 (§4-3). 등장 조건은 깊이가 아니라 주변 암반 경도.
-import { TILE, ENEMY, MOLE_HEAR, MOLE_AUDIBLE, MOLE_SILHOUETTE, CENTI_DIVE, CENTI_RESURFACE, CHUNK } from '../data/balance.js';
+import {
+  TILE, ENEMY, ENEMY_HIT_PAD, MOLE_HEAR, MOLE_AUDIBLE, MOLE_SILHOUETTE,
+  CENTI_DIVE, CENTI_RESURFACE, CHUNK,
+} from '../data/balance.js';
 import { hash2, mulberry32 } from '../world/rng.js';
 import { MAT, isSolidMat } from '../world/tiles.js';
 
@@ -135,16 +138,29 @@ export class Enemies {
     }
   }
 
+  /** 피해 판정에만 쓰는 여유 박스 (§4-3). 접촉 피해·이동은 원래 크기를 쓴다. */
+  hitBox(e) {
+    return {
+      x: e.x - ENEMY_HIT_PAD, y: e.y - ENEMY_HIT_PAD,
+      w: e.w + ENEMY_HIT_PAD * 2, h: e.h + ENEMY_HIT_PAD * 2,
+    };
+  }
+
   overlapsTiles(e, set) {
-    const x0 = Math.floor(e.x / TILE), x1 = Math.floor((e.x + e.w - 1) / TILE);
-    const y0 = Math.floor(e.y / TILE), y1 = Math.floor((e.y + e.h - 1) / TILE);
+    const b = this.hitBox(e);
+    const x0 = Math.floor(b.x / TILE), x1 = Math.floor((b.x + b.w - 1) / TILE);
+    const y0 = Math.floor(b.y / TILE), y1 = Math.floor((b.y + b.h - 1) / TILE);
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (set.has(x + ',' + y)) return true;
     return false;
   }
 
   hitCircle(px, py, r, dmg) {
     for (const e of [...this.list]) {
-      if (Math.hypot(e.x + e.w / 2 - px, e.y + e.h / 2 - py) <= r) this.hurt(e, dmg);
+      const b = this.hitBox(e);
+      // 중심점 거리가 아니라 여유 박스와의 최단 거리로 잰다
+      const dx = Math.max(b.x - px, 0, px - (b.x + b.w));
+      const dy = Math.max(b.y - py, 0, py - (b.y + b.h));
+      if (Math.hypot(dx, dy) <= r) this.hurt(e, dmg);
     }
   }
 

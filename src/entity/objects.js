@@ -10,6 +10,7 @@ export const HOUSE = { x0: 3, y0: -5, x1: 11, y1: -1, doorX: 7 };
 export const SURFACE_SPAWN = { x: HOUSE.doorX, y: -3 };
 const CAT_BAND_M = 25;
 const ITEM_KINDS = ['bomb', 'drill', 'laser', 'flag'];
+const INTERACT_R = 2.5; // 타일 — 상자·고양이·플래그 공통 사거리
 
 export class Objects {
   constructor(game) {
@@ -163,26 +164,42 @@ export class Objects {
     return best;
   }
 
-  /** E 상호작용. 우선순위: 정거장 → 집 → 상자 → 고양이 → 플래그 */
-  interact() {
-    const g = this.game;
-    const p = g.player;
+  /**
+   * 지금 E가 실제로 집을 대상. 우선순위: 정거장 → 집 → 상자 → 고양이 → 플래그.
+   * interact()와 화면의 [E] 안내가 같은 답을 보게 하려고 한곳에 모았다.
+   */
+  interactTarget() {
+    const p = this.game.player;
     const st = this.nearestStation(6);
-    if (st) { g.openElevator(st); return 'station'; }
-    if (this.nearHouse()) { g.openHouse(); return 'house'; }
-
+    if (st) return { kind: 'station', ref: st };
+    if (this.nearHouse()) return { kind: 'house', ref: null };
     for (const c of this.chests) {
       if (c.opened) continue;
-      if (this.near(c.x, c.y, p.tileX, p.tileY, 2.5)) { this.openChest(c); return 'chest'; }
+      if (this.near(c.x, c.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'chest', ref: c };
     }
     for (const c of this.cats) {
       if (c.carried) continue;
-      if (this.near(c.x, c.y, p.tileX, p.tileY, 2.5)) { this.pickCat(c); return 'cat'; }
+      if (this.near(c.x, c.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'cat', ref: c };
     }
     for (const f of this.flags) {
-      if (this.near(f.x, f.y, p.tileX, p.tileY, 2.5)) { g.readFlag(f); return 'flag'; }
+      if (this.near(f.x, f.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'flag', ref: f };
     }
     return null;
+  }
+
+  /** E 상호작용 */
+  interact() {
+    const g = this.game;
+    const t = this.interactTarget();
+    if (!t) return null;
+    switch (t.kind) {
+      case 'station': g.openElevator(t.ref); break;
+      case 'house': g.openHouse(); break;
+      case 'chest': this.openChest(t.ref); break;
+      case 'cat': this.pickCat(t.ref); break;
+      case 'flag': g.readFlag(t.ref); break;
+    }
+    return t.kind;
   }
 
   openChest(c) {
@@ -252,6 +269,9 @@ export class Objects {
   }
 
   draw(ctx, cam) {
+    // E가 지금 누구를 집는지 한 번만 계산해서 안내도 그대로 따라간다
+    const target = this.interactTarget();
+
     // 지상의 집
     const hx = HOUSE.x0 * TILE - cam.x, hy = HOUSE.y0 * TILE - cam.y;
     const hw = (HOUSE.x1 - HOUSE.x0 + 1) * TILE, hh = (HOUSE.y1 - HOUSE.y0 + 1) * TILE;
@@ -269,12 +289,8 @@ export class Objects {
     ctx.fillStyle = '#f4d47c';
     ctx.fillRect(hx + 8, hy + 10, 12, 12);
     ctx.fillRect(hx + hw - 20, hy + 10, 12, 12);
-    if (this.nearHouse()) {
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('[E] 집', hx + hw / 2, hy - 32);
-      ctx.textAlign = 'left';
+    if (target && target.kind === 'house') {
+      this.drawPrompt(ctx, hx + hw / 2, hy - 32, '[E] 집');
     }
 
     // 정거장
@@ -306,6 +322,14 @@ export class Objects {
       ctx.fillRect(x + 1, y + 3, 14, 4);
       ctx.fillStyle = '#ffe9a8';
       ctx.fillRect(x + 7, y + 8, 2, 4);
+      // 사거리 안이면 테두리 + [E] 안내 (E를 눌러야 열린다는 걸 알려준다)
+      if (target && target.kind === 'chest' && target.ref === c) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 0.5, y + 2.5, 15, 14);
+        // 옆에 선 플레이어(2타일 높이)에 가리지 않게 머리 위로 올려 그린다
+        this.drawPrompt(ctx, x + 8, y - 22, '[E] 열기');
+      }
     }
 
     // 고양이
@@ -332,6 +356,18 @@ export class Objects {
       ctx.closePath();
       ctx.fill();
     }
+  }
+
+  /** 어떤 배경 위에서도 읽히게 어두운 판을 깔고 쓰는 [E] 안내 */
+  drawPrompt(ctx, x, y, text) {
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    const w = ctx.measureText(text).width + 8;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(x - w / 2, y - 11, w, 15);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, x, y);
+    ctx.textAlign = 'left';
   }
 
   drawCat(ctx, x, y, scale = 1) {

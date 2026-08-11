@@ -101,6 +101,9 @@ export const ENEMY = {
   mole: { hp: 2, minH: 2, speed: 0 },
   centipede: { hp: 6, minH: 3, speed: 2.0 },
 };
+// 공격 판정용 히트박스 여유. 적 몸집이 타일(16px)보다 작아서 정확히 겨누기 어려우니
+// 피해 판정만 사방으로 넓힌다. 이동·접촉 피해·렌더는 원래 크기(SIZE)를 그대로 쓴다.
+export const ENEMY_HIT_PAD = 6; // px
 export const MOLE_HEAR = 14; // 타일 (7m)
 export const MOLE_AUDIBLE = 15; // 15타일 (7.5m)
 export const MOLE_SILHOUETTE = 6; // 6타일 (3m)
