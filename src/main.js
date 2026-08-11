@@ -1,6 +1,6 @@
 // CAT A COME — 런 상태 머신 · 고정 타임스텝 루프
 import {
-  TILE, DT, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG,
+  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG,
 } from './data/balance.js';
 import { World } from './world/world.js';
 import { TUT_SPAWNS, TUT_HINTS } from './world/tutorial.js';
@@ -301,10 +301,10 @@ class Game {
       else if (!this.panels.open) this.panels.openInventory();
     }
 
-    // 조준 (커서 방향이 곧 바라보는 방향)
+    // 조준 (커서 방향이 곧 바라보는 방향) — 확대 배율만큼 커서를 월드로 환산
     const v = this.camera.view;
-    this.aim.x = input.mouse.x + v.x;
-    this.aim.y = input.mouse.y + v.y;
+    this.aim.x = input.mouse.x / ZOOM + v.x;
+    this.aim.y = input.mouse.y / ZOOM + v.y;
     this.aim.dx = this.aim.x - this.player.eyeX;
     this.aim.dy = this.aim.y - this.player.eyeY;
     if (!this.player.dead) this.player.facing = this.aim.dx >= 0 ? 1 : -1;
@@ -364,6 +364,8 @@ class Game {
   render() {
     const ctx = this.ctx;
     const cam = this.camera.view;
+    // 확대는 여기서 한 번만 건다. 아래 draw들은 전부 월드 단위(cam 상대) 좌표를 쓴다.
+    ctx.setTransform(ZOOM, 0, 0, ZOOM, 0, 0);
     this.drawBackground(ctx, cam);
     this.world.draw(ctx, cam);
     this.objects.draw(ctx, cam);
@@ -374,6 +376,7 @@ class Game {
     this.particles.draw(ctx, cam);
     this.sonar.draw(ctx, cam);
     this.drawOverlays(ctx, cam);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (!this.paused) this.hud.update();
     this.updateHint();
   }

@@ -9,6 +9,10 @@ export const DEPTH_CAP_M = 1000000;
 export const FPS = 60;
 export const DT = 1 / FPS;
 
+// 화면 확대 배율. 캔버스는 창 크기 그대로 쓰고 월드만 이 배율로 크게 그린다.
+// 정수 배율이어야 fillRect 경계가 반픽셀에 걸리지 않아 도트가 깨지지 않는다.
+export const ZOOM = 3;
+
 // ── 경도 분포 (§3-2) ─────────────────────────────────────────────
 export const HARDNESS_BANDS = [
   { maxM: 50, w: [85, 15, 0, 0] },
@@ -40,14 +44,19 @@ export const clinicCost = (n, grade) => Math.min(5 * Math.pow(2, n - 1), clinicC
 export const bankFeeRate = (grade) => grade / 100;
 
 // ── 소나 (§3-3) ──────────────────────────────────────────────────
+// 반경은 계획서 값(16·20·24·28·30타일)의 5배다. 탐지 반경과 화면에 퍼지는
+// 파면이 같은 값을 쓰므로, 여기만 고치면 HUD·상점 표기까지 함께 따라온다.
 export const SONAR = [
-  { r: 16, cd: 7.0 },
-  { r: 20, cd: 5.5 },
-  { r: 24, cd: 4.0 },
-  { r: 28, cd: 2.5 },
-  { r: 30, cd: 1.5 },
+  { r: 80, cd: 7.0 },
+  { r: 100, cd: 5.5 },
+  { r: 120, cd: 4.0 },
+  { r: 140, cd: 2.5 },
+  { r: 150, cd: 1.5 },
 ];
-export const SONAR_WAVE_TIME = 0.4;
+// 5배 넓어진 파면이 화면(확대 시 반경 약 160px)을 한순간에 스쳐 지나가지 않도록
+// 퍼지는 시간을 늘렸다. 탐지도 이 시간에 걸쳐 순차로 이뤄진다.
+export const SONAR_WAVE_TIME = 1.4;
+export const SONAR_RIPPLES = 4;     // 초음파처럼 겹쳐 나가는 동심원 수
 export const SONAR_MOLE_PULL = 3; // 타일
 
 // ── 소모 아이템 (§3-4) ───────────────────────────────────────────

@@ -1,6 +1,7 @@
 // 갈고리 — 진자 스윙 도구가 아니라 즉시 견인 구제 수단 (§3-5)
 import { TILE, GRAPPLE_RANGE, GRAPPLE_REEL_SPEED } from '../data/balance.js';
 import { isSolidMat } from '../world/tiles.js';
+import { GRAPPLE_KICK_V } from './player.js';
 
 const ARRIVE = TILE * 1.8;
 
@@ -70,11 +71,14 @@ export class Grapple {
     }
     if (!held && this.active) this.release();
 
-    // Space로 해제 + 상승
+    // Space로 해제 + 상승. 공중 점프 횟수를 되돌려주고, 같은 프레임에
+    // player.update가 그 점프를 소모하지 않게 막는다 (이단점프 유지).
     if (this.active && input.pressed(' ')) {
       this.release();
-      p.vy = -7.05;
+      p.vy = GRAPPLE_KICK_V;
       p.airJumps = p.airJumpsMax;
+      p.suppressJump = true;
+      this.game.sfx.play('jump');
       this.wasHeld = held;
       return;
     }

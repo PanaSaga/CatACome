@@ -1,7 +1,7 @@
 // 고양이 · 보물상자 · 정거장 · 플래그 · 지상의 집
-import { TILE, CHUNK, CHEST_GRADES, POTION, M_PER_TILE, FLAG } from '../data/balance.js';
+import { TILE, ZOOM, CHUNK, CHEST_GRADES, POTION, M_PER_TILE, FLAG } from '../data/balance.js';
 import { hash2, mulberry32 } from '../world/rng.js';
-import { MAT } from '../world/tiles.js';
+import { MAT, isDiggable } from '../world/tiles.js';
 
 export const HOUSE = { x0: 3, y0: -5, x1: 11, y1: -1, doorX: 7 };
 // 지상 스폰/복귀 지점 = 집 문 앞. 집 주변 지상 타일(x 2~13, y 0~1)은 파괴 불가라
@@ -59,8 +59,7 @@ export class Objects {
       for (let t = 0; t < 30; t++) {
         const tx = cx * CHUNK + Math.floor(rnd() * CHUNK);
         const ty = cy * CHUNK + Math.floor(rnd() * CHUNK);
-        if (world.mat(tx, ty) !== MAT.AIR) continue;
-        if (!world.isSolid(tx, ty + 1)) continue;
+        if (!this.buriable(tx, ty)) continue;
         const grade = this.rollChestGrade(gen.maxHardnessAround(tx, ty, 3), rnd);
         this.chests.push({ id: this.id('C'), x: tx, y: ty, grade, opened: false });
         break;
@@ -76,18 +75,32 @@ export class Objects {
       const tx = Math.round((hash2(b, 2, gen.seed + 17) * 2 - 1) * 250);
       if (Math.floor(tx / CHUNK) !== cx) continue;
       if (this.cats.some((c) => c.band === b)) continue;
-      const spot = this.findAir(tx, ty);
+      const spot = this.findBuriable(tx, ty);
       if (spot) this.cats.push({ id: this.id('K'), band: b, x: spot.x, y: spot.y, carried: false });
     }
   }
 
-  findAir(tx, ty) {
+  /**
+   * 파묻힐 수 있는 자리인가 — 자기 타일이 캘 수 있는 암반이고 사방이 막혀 있어야 한다.
+   * 공동에 노출된 자리를 걸러내서 "걸어가다 줍는" 배치가 되지 않게 한다 (§5-7).
+   * 타일은 비우지 않는다. blocksTile()이 대상이 든 타일을 파괴 대상에서 제외하므로
+   * 플레이어는 주변 암반을 파내 접근하고, 대상이 든 칸은 끝까지 남는다 (§11-2).
+   */
+  buriable(tx, ty) {
     const world = this.game.world;
+    if (!isDiggable(world.mat(tx, ty))) return false;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (!world.isSolid(tx + dx, ty + dy)) return false;
+    }
+    return true;
+  }
+
+  findBuriable(tx, ty) {
     for (let r = 0; r <= 10; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           const x = tx + dx, y = ty + dy;
-          if (world.mat(x, y) === MAT.AIR && world.isSolid(x, y + 1)) return { x, y };
+          if (this.buriable(x, y)) return { x, y };
         }
       }
     }
@@ -327,8 +340,7 @@ export class Objects {
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = 1;
         ctx.strokeRect(x + 0.5, y + 2.5, 15, 14);
-        // 옆에 선 플레이어(2타일 높이)에 가리지 않게 머리 위로 올려 그린다
-        this.drawPrompt(ctx, x + 8, y - 22, '[E] 열기');
+        this.drawPrompt(ctx, x + 8, y - 6, '[E] 열기');
       }
     }
 
@@ -358,16 +370,24 @@ export class Objects {
     }
   }
 
-  /** 어떤 배경 위에서도 읽히게 어두운 판을 깔고 쓰는 [E] 안내 */
+  /**
+   * 어떤 배경 위에서도 읽히게 어두운 판을 깔고 쓰는 [E] 안내.
+   * 확대 배율을 벗어나 화면 좌표로 그린다 — 월드 좌표로 두면 3배 확대에서
+   * 글자가 36px이 되어 캐릭터를 덮어버린다. 입력은 카메라 상대 좌표.
+   */
   drawPrompt(ctx, x, y, text) {
-    ctx.font = 'bold 12px monospace';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const sx = x * ZOOM, sy = y * ZOOM;
+    ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
-    const w = ctx.measureText(text).width + 8;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(x - w / 2, y - 11, w, 15);
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(sx - w / 2, sy - 13, w, 17);
     ctx.fillStyle = '#fff';
-    ctx.fillText(text, x, y);
+    ctx.fillText(text, sx, sy);
     ctx.textAlign = 'left';
+    ctx.restore();
   }
 
   drawCat(ctx, x, y, scale = 1) {

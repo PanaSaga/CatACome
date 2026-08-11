@@ -47,14 +47,24 @@ export class Gen {
     return this.stationByChunkY.get(Math.floor(y / CHUNK)) || [];
   }
 
-  /** 정거장 구조물. 0 = 해당 없음, 그 외 = 타일값 */
+  /**
+   * 정거장 구조물. −1 = 해당 없음, 그 외 = 타일값.
+   * pack(MAT.AIR)이 0이라 예전처럼 0을 "해당 없음"으로 쓰면 빈 칸 지정이 falsy로
+   * 묻혀 승강기 칸이 아예 파이지 않는다. travelTo로 내려오면 암반에 박힌다.
+   * 예전에는 정거장 위로 15×5 방을 미리 파뒀다. 정거장도 파내서 찾는 것이 되도록
+   * 방을 승강기 칸 크기(4×4)로 줄였다 — 사방이 암반이라 밖에서는 파내야 닿고,
+   * 안은 비어 있어야 엘리베이터로 내려왔을 때(travelTo) 암반 속에 박히지 않는다.
+   * 발판 폭도 구조물이 그려지는 s.x−2 ~ s.x+1로 줄였다. 불괴 재질인 발판을
+   * 예전처럼 15칸 깔면 암반 속에 파낼 수 없는 가로벽이 생긴다 (§5-6).
+   * 튜토리얼 구간(|x| ≤ 40, y ≤ 101)은 tutorialTile이 먼저 처리하므로 E1 방은 그대로다.
+   */
   stationTile(x, y) {
     for (const s of this.stationsNear(y)) {
-      if (x < s.x - 7 || x > s.x + 7) continue;
+      if (x < s.x - 2 || x > s.x + 1) continue;
       if (y === s.y + 1) return pack(MAT.STATION);
-      if (y >= s.y - 4 && y <= s.y) return pack(MAT.AIR);
+      if (y >= s.y - 3 && y <= s.y) return pack(MAT.AIR);
     }
-    return 0;
+    return -1;
   }
 
   /** 액체·다이너마이트를 제외한 기반 지형. 액체 판정이 이 함수를 재귀 없이 참조한다 */
@@ -102,7 +112,7 @@ export class Gen {
     if (tutorialOwns(x, y)) return tutorialTile(x, y, this.seed);
 
     const st = this.stationTile(x, y);
-    if (st) return st;
+    if (st >= 0) return st;
 
     const c = this.core(x, y);
     if (c.mat !== MAT.AIR) return pack(c.mat, c.ore);

@@ -52,6 +52,29 @@ export function pickaxeArea(world, cx, cy, rangeLv, facing) {
   return { tiles, side, hits, maxH, rect: r };
 }
 
+/**
+ * 눈높이에서 커서 방향으로 훑어 캐릭터에 가장 가까운 파괴 대상 타일을 찾는다 (§3-1).
+ * 커서가 놓인 타일이 아니라 이 타일을 곡괭이가 노린다 — 벽 너머를 파는 일이 없다.
+ * 액체는 통과하고, 상자·고양이가 든 타일은 부술 수 없으니 건너뛴다.
+ * @returns {{x:number,y:number}|null}
+ */
+export function nearestDigTile(game, world, ox, oy, dx, dy, maxTiles) {
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = dx / len, ny = dy / len;
+  let lx = null, ly = null;
+  for (let d = 0.25; d <= maxTiles; d += 0.25) {
+    const tx = Math.floor((ox + nx * d * TILE) / TILE);
+    const ty = Math.floor((oy + ny * d * TILE) / TILE);
+    if (tx === lx && ty === ly) continue;
+    lx = tx; ly = ty;
+    const m = world.mat(tx, ty);
+    if (m === MAT.AIR || m === MAT.WATER || m === MAT.LAVA) continue;
+    if (game.objects.blocksTile(tx, ty)) continue;
+    return { x: tx, y: ty };
+  }
+  return null;
+}
+
 /** 직선 빔이 지나는 타일. blocked = 경도 한계에 막힌 지점 */
 export function beamTiles(world, ox, oy, dx, dy, lengthTiles, width, maxHardness) {
   const len = Math.hypot(dx, dy) || 1;
@@ -191,13 +214,21 @@ export class Tools {
   }
 
   // ── 곡괭이 ─────────────────────────────────────────────────────
+  /** 이번 스윙이 노리는 타일. 미리보기와 실제 파괴가 같은 값을 쓴다. */
+  pickTarget(world) {
+    const g = this.game;
+    const p = g.player;
+    return nearestDigTile(g, world, p.eyeX, p.eyeY, g.aim.dx, g.aim.dy, PICK_REACH);
+  }
+
   swingPickaxe(world) {
     const g = this.game;
     const p = g.player;
     const aim = g.aim;
-    const dist = Math.hypot(aim.x - p.eyeX, aim.y - p.eyeY);
-    if (dist > PICK_REACH * TILE) return; // 사거리 밖 — 쿨다운도 소모하지 않는다
-    const cx = Math.floor(aim.x / TILE), cy = Math.floor(aim.y / TILE);
+    // 커서는 방향만 정한다. 실제로 파는 건 그 방향에서 가장 가까운 블록.
+    const t = this.pickTarget(world);
+    if (!t) return; // 사거리 안에 파낼 게 없다 — 쿨다운도 소모하지 않는다
+    const cx = t.x, cy = t.y;
     const rangeLv = g.profile.upgrades.pickRange;
     const speedLv = g.profile.upgrades.pickSpeed;
     const area = pickaxeArea(world, cx, cy, rangeLv, p.facing);
@@ -207,6 +238,7 @@ export class Tools {
     this.multiCount++;
     this.pickCd = PICK_CD[speedLv - 1];
 
+    p.swingPick(aim.dx, aim.dy); // 휘두르는 모션
     g.sfx.dig(area.maxH);
     g.enemies.onNoise(1); // 곡괭이 1스윙 = 두더지 1타일 (§4-3)
     g.enemies.hitTiles(area.tiles, GRADE_DMG[g.effGrade() - 1]);
@@ -400,10 +432,9 @@ export class Tools {
     if (!g.player.dead) {
       const aim = g.aim;
       const p = g.player;
-      const dist = Math.hypot(aim.x - p.eyeX, aim.y - p.eyeY);
-      const cx = Math.floor(aim.x / TILE), cy = Math.floor(aim.y / TILE);
-      if (this.name === 'pickaxe' && dist <= PICK_REACH * TILE) {
-        const area = pickaxeArea(g.world, cx, cy, g.profile.upgrades.pickRange, p.facing);
+      const t = this.name === 'pickaxe' ? this.pickTarget(g.world) : null;
+      if (t) {
+        const area = pickaxeArea(g.world, t.x, t.y, g.profile.upgrades.pickRange, p.facing);
         ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 1;
         ctx.strokeRect(area.rect.x0 * TILE - cam.x + 0.5, area.rect.y0 * TILE - cam.y + 0.5, area.side * TILE - 1, area.side * TILE - 1);

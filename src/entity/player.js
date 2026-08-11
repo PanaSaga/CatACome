@@ -9,9 +9,14 @@ const EPS = 0.01;
 const COL_INSET = 1;
 export const GRAVITY = 0.55;
 export const TERMINAL = 12;
-export const JUMP_V = -7.92;      // 1단 ≈ 3.57타일
-export const AIR_JUMP_V = -6.9;   // 이단 누적 ≈ 6.3타일
+// 점프 속도를 계획서 값(−7.92 / −6.9 / −7.05)의 1.3배로 올렸다.
+// 도달 높이는 속도의 제곱에 비례하므로 1단 3.57 → 6.0타일이 된다.
+const JUMP_MUL = 1.3;
+export const JUMP_V = -7.92 * JUMP_MUL;         // 1단 ≈ 6.0타일
+export const AIR_JUMP_V = -6.9 * JUMP_MUL;      // 이단 누적 ≈ 10.6타일
+export const GRAPPLE_KICK_V = -7.05 * JUMP_MUL; // 갈고리 해제 상승
 export const RUN_SPEED = 2.6;
+const SWING_TIME = 0.24;
 
 function boxSolid(world, x, y, w, h) {
   const tx0 = Math.floor(x / TILE), tx1 = Math.floor((x + w - EPS) / TILE);
@@ -51,7 +56,16 @@ export class Player {
     this.submerged = false;
     this.buried = 0;
     this.jumpLock = 0;
+    this.swingT = 0;
+    this.swingAng = 0;
+    this.suppressJump = false;
     this.dead = false;
+  }
+
+  /** 곡괭이를 휘두른 순간 — 조준 방향으로 호를 그린다 */
+  swingPick(dx, dy) {
+    this.swingT = SWING_TIME;
+    this.swingAng = Math.atan2(dy, dx);
   }
 
   get cx() { return this.x + this.w / 2; }
@@ -120,6 +134,7 @@ export class Player {
     if (this.dead) return;
     this.invuln = Math.max(0, this.invuln - dt);
     this.jumpLock = Math.max(0, this.jumpLock - dt);
+    this.swingT = Math.max(0, this.swingT - dt);
     this.sampleLiquids(world);
 
     // ── 매몰 ────────────────────────────────────────────────────
@@ -151,7 +166,10 @@ export class Player {
       this.vy = Math.min(this.vy + GRAVITY, TERMINAL);
     }
 
-    if (input.pressed(' ')) this.jump();
+    // 갈고리가 이번 프레임의 Space를 이미 해제+상승으로 썼으면 공중 점프를
+    // 겹쳐 쓰지 않는다. 그래야 갈고리에서 뛰어내린 뒤에도 이단점프가 남는다.
+    if (input.pressed(' ') && !this.suppressJump) this.jump();
+    this.suppressJump = false;
 
     // ── 이동 (스윕 · 스냅은 이동 후 좌표 기준 §11-1 함정 2) ─────
     this.moveAxis(world, 'x');
@@ -309,6 +327,7 @@ export class Player {
     ctx.fillStyle = '#3a2f28';
     ctx.fillRect(sx + 2, sy + 30, 5, 2);
     ctx.fillRect(sx + 9, sy + 30, 5, 2);
+    if (this.swingT > 0) this.drawPickaxe(ctx, sx, sy);
     ctx.globalAlpha = 1;
 
     if (this.buried > 0) {
@@ -318,5 +337,26 @@ export class Player {
       ctx.font = 'bold 11px monospace';
       ctx.fillText('좌클릭 연타!', sx - 18, sy - 8);
     }
+  }
+
+  /**
+   * 조준 방향을 중심으로 곡괭이가 위에서 아래로 호를 그린다.
+   * 진행도 0 → 1 동안 −0.9rad에서 +0.5rad까지 훑고, 뒤쪽 절반은 빠르게 복귀한다.
+   */
+  drawPickaxe(ctx, sx, sy) {
+    const t = 1 - this.swingT / SWING_TIME; // 0 = 시작, 1 = 끝
+    const ease = t < 0.55 ? t / 0.55 : 1 - (t - 0.55) / 0.45 * 0.35;
+    const ang = this.swingAng - 0.9 + ease * 1.4;
+    ctx.save();
+    ctx.translate(sx + 8, sy + 14); // 어깨
+    ctx.rotate(ang);
+    // 자루
+    ctx.fillStyle = '#8a5a3c';
+    ctx.fillRect(0, -1, 15, 3);
+    // 머리 (ㄱ자)
+    ctx.fillStyle = '#c9ccd8';
+    ctx.fillRect(13, -6, 4, 10);
+    ctx.fillRect(9, -6, 8, 3);
+    ctx.restore();
   }
 }

@@ -1,5 +1,7 @@
 // 소나 5단계 (§3-3). Lv1 흰 링만 · Lv2 색 구분 · Lv3 정거장 화살표 + 자동 토글 · Lv5 거리 병기
-import { SONAR, SONAR_WAVE_TIME, SONAR_MOLE_PULL, SONAR_COLOR, TILE, M_PER_TILE } from '../data/balance.js';
+import {
+  SONAR, SONAR_WAVE_TIME, SONAR_RIPPLES, SONAR_MOLE_PULL, SONAR_COLOR, TILE, M_PER_TILE,
+} from '../data/balance.js';
 
 const ENEMY_MARK_LIFE = 4;
 
@@ -82,15 +84,21 @@ export class Sonar {
   }
 
   draw(ctx, cam) {
-    // 파면
+    // 파면 — 선두 링 뒤로 여러 겹이 따라 나가는 초음파 형태
     for (const w of this.waves) {
-      const r = w.r * Math.min(1, w.t / SONAR_WAVE_TIME);
+      const front = Math.min(1, w.t / SONAR_WAVE_TIME);
       const a = Math.max(0, 1 - w.t / (SONAR_WAVE_TIME + 0.35));
-      ctx.strokeStyle = `rgba(150,230,255,${0.5 * a})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(w.x - cam.x, w.y - cam.y, r, 0, Math.PI * 2);
-      ctx.stroke();
+      const cx = w.x - cam.x, cy = w.y - cam.y;
+      for (let i = 0; i < SONAR_RIPPLES; i++) {
+        // 뒤 링은 늦게 출발한 것처럼 진행도를 빼서 겹쳐 나가게 한다
+        const p = front - i * 0.13;
+        if (p <= 0) continue;
+        ctx.strokeStyle = `rgba(150,230,255,${0.5 * a * (1 - i / SONAR_RIPPLES)})`;
+        ctx.lineWidth = i === 0 ? 3 : 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, w.r * p, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     const colored = this.level >= 2;
