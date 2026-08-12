@@ -328,7 +328,7 @@ export class Panels {
             <tbody>${rows}${meRow ? `<tr><td colspan="3" class="dim" style="text-align:center">⋯</td></tr>${meRow}` : ''}</tbody></table>`
         : '<p class="dim">아직 기록이 없다. 한 번 죽어야 등록된다.</p>'}
         </div>
-        <footer><span class="dim">${BACKEND.note} — 다른 플레이어 기록은 파이어베이스 연결 후</span>
+        <footer><span class="dim">${BACKEND.note}</span>
         <button data-close class="ghost">닫기</button></footer>
       </div>`);
     this.root.querySelectorAll('[data-board]').forEach((b) => b.addEventListener('click', () => {

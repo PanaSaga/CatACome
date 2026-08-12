@@ -12,40 +12,53 @@ python3 -m http.server 5175   # → http://localhost:5175/index.html
 
 ---
 
-## 지금 상태 — 프론트 완성, 백엔드 미연결
+## 백엔드 — Cloudflare Pages Functions + D1
 
-**파이어베이스는 아직 붙지 않았다.** 백엔드가 필요한 기능은 전부
-[`src/net/api.js`](src/net/api.js) 한 파일 뒤로 격리해 두고, 지금은 localStorage
-로컬 스텁으로 동작한다. 게임 로직은 이 파일 밖의 어떤 코드도 백엔드를 직접 알지 못한다.
+백엔드가 필요한 기능은 전부 [`src/net/api.js`](src/net/api.js) 한 파일 뒤로 격리돼 있고,
+실제 통신은 [`functions/api/*`](functions/api)가 [D1](migrations/0001_init.sql)로 처리한다.
+게임 로직은 이 파일 밖의 어떤 코드도 백엔드를 직접 알지 못한다.
 
-| 기능 | 지금 | 파이어베이스 연결 후 |
+| 기능 | 엔드포인트 | 오프라인일 때 |
 |---|---|---|
-| 프로필(업그레이드·예치금·시즌 누적) | localStorage | Firestore `players/{uid}` |
-| 랭킹 3종(최고 깊이·최다 구출·시즌 누적) | 내 기록만 로컬 집계 | Firestore `runs` + 집계 |
-| 플래그 남기기 | 내 플래그만 내 화면에 | Firestore `flags` 지리 박스 질의 |
-| 타인 시체 루팅 | 미동작 (`postCorpse`/`lootCorpse`가 false 반환) | Cloud Function 원자적 선착순 지급 |
-| 메시지 모더레이션 | 1~2단계 로컬 (입력 제한·사전·자소 복원·l33t) | + 3단계 서버 LLM 판정 |
-| 시즌 시드 | 상수 `SEASON.seed = 20260811` | 서버가 배포 |
+| 프로필(업그레이드·예치금·시즌 누적) | `GET/POST /api/profile` | localStorage로 즉시 대체, 재접속 시 재시도 |
+| 랭킹 3종(최고 깊이·최다 구출·시즌 누적) | `GET /api/leaderboard` | 내 기록만 로컬 집계 |
+| 플래그 남기기 | `POST /api/flags` | 내 화면엔 그대로 보이고, 서버 전송만 실패 |
+| 타인 플래그·시체 열람/루팅 | 미구현 (`fetchMarkers`/`postCorpse`/`lootCorpse`가 로컬 스텁) | 해당 없음 |
+| 메시지 모더레이션 | 1~2단계만 클라이언트 (입력 제한·사전·자소 복원·l33t) | 3단계 서버 LLM 판정은 별도 바인딩·비용 결정이 필요해 미구현 |
+| 시즌 시드 | 상수 `SEASON.seed = 20260811` | — |
 
-### 내일 붙일 때
+저장은 항상 **로컬을 먼저** 쓰고 서버 요청은 fire-and-forget으로 뒤따라 보낸다 — 실패해도
+무시하고 다음 저장 때 다시 보내므로, 서버가 죽어도 채굴·전투·성장은 막히지 않는다 (§11-2).
 
-`src/net/api.js`의 함수 **본문만** 교체하면 된다. 시그니처와 반환 형태는 이미 고정돼 있다.
+### 배포·인프라
+
+```
+wrangler.toml                  Pages 프로젝트 설정 + D1 바인딩(DB)
+migrations/0001_init.sql       profiles · runs · flags 3개 테이블
+functions/api/*.js             Pages Functions — net/api.js가 실제로 부르는 4개만 구현
+.github/workflows/
+  cf-bootstrap.yml             Actions 탭에서 딱 한 번 수동 실행 — D1·Pages 프로젝트 생성
+  deploy-cloudflare.yml        push마다 자동 배포 (index.html·styles.css·src/만 public/에 스테이징)
+```
+
+시크릿 `CLOUDFLARE_API_TOKEN`·`CLOUDFLARE_ACCOUNT_ID`를 저장소에 등록한 뒤 `cf-bootstrap`을
+한 번 실행하면 이후는 push할 때마다 자동 배포된다. 로컬에서는 Cloudflare 계정 없이도
+`npx wrangler pages dev public`으로 Functions·D1까지 전부 확인할 수 있다(로컬 SQLite 사용).
+
+`src/net/api.js`의 함수 시그니처와 반환 형태는 고정돼 있다 — 백엔드를 다시 바꿀 때도
+이 계약만 지키면 된다.
 
 ```js
 export async function loadProfile()                  // → profile 객체
 export async function saveProfile(profile)           // → boolean
 export async function submitRun({name, depth, cats}) // → boolean
 export async function fetchLeaderboard(kind)         // → {top:[{rank,name,value}], me, myRank}
-export async function fetchMarkers(box)              // → {flags:[], corpses:[]}
+export async function fetchMarkers(box)              // → {flags:[], corpses:[]}  (미구현)
 export async function postFlag(flag)                 // → boolean
-export async function postCorpse(corpse)             // → boolean
-export async function lootCorpse(id)                 // → {ok, reason}
+export async function postCorpse(corpse)             // → boolean  (미구현)
+export async function lootCorpse(id)                 // → {ok, reason}  (미구현)
 export function moderate(text, maxLen)               // → {ok, reason, text}  (1~2단계)
 ```
-
-`BACKEND.online`을 true로 바꾸면 시작 화면·인벤토리의 "파이어베이스 미연결" 안내가 사라진다.
-서버가 죽어도 채굴·전투·성장은 정상 진행돼야 하므로, 네트워크 실패는 조용히 삼키고
-게임을 막지 않는 구조로 짜 두었다.
 
 ---
 
@@ -78,8 +91,8 @@ export function moderate(text, maxLen)               // → {ok, reason, text}  
 고양이 구출/인계 · 정거장 발견과 엘리베이터 · 지상의 집 5개 탭(업그레이드·상점·의료소·은행·엘리베이터) ·
 런/사망 루프와 랭킹 등록 · 절차 생성 SFX.
 
-**아직 없는 것** — 타인 플래그·시체(백엔드 대기) · 굴러가는 바위 · 액체 유동
-(계획서대로 v1은 정적 볼륨) · 시즌 종료 처리.
+**아직 없는 것** — 타인 플래그·시체 열람(서버는 붙었지만 이 두 기능은 아직 미구현) ·
+굴러가는 바위 · 시즌 종료 처리.
 
 ### 계획서와 다르게 한 곳
 
@@ -98,9 +111,11 @@ export function moderate(text, maxLen)               // → {ok, reason, text}  
 ## 구조
 
 ```
+wrangler.toml · migrations/    Cloudflare Pages 설정 + D1 스키마
+functions/api/*.js             Pages Functions — net/api.js가 실제로 부르는 엔드포인트만
 index.html · styles.css        캔버스 + HUD/패널 DOM
 src/data/balance.js            모든 수치 상수 (§1~§9). 밸런스 조정은 이 파일만 고친다
-src/net/api.js                 ★ 백엔드 경계 — 파이어베이스는 여기만 교체
+src/net/api.js                 ★ 백엔드 경계 — 다른 백엔드로 바꿀 때 여기만 교체
 src/core/input.js              홀드/엣지 구분, 포커스 상실 시 홀드 해제
 src/world/rng.js               결정론 해시 · fbm 노이즈 · 역CDF 균등화
 src/world/tiles.js             타일 재질·경도·색
@@ -136,3 +151,6 @@ Playwright로 계획서 §10~§11의 검증 항목을 자동 확인했다(콘솔
 - 지네 필요 타수 등급1/3/5 = 6/3/2 · 거미 처치 시 새끼 3마리
 - 상자 등급 경도 게이트(경도1에서 전설·희귀 0개) · 의무실 상한 · 은행 수수료 1~5%
 - 사망 시 소실/보존 구분 · 깊이 10만 m 렌더 정상
+- 백엔드(`wrangler pages dev` + 로컬 D1) — 프로필 저장/로드 실제 서버 왕복 ·
+  사망 시 리더보드 3종에 실서버 값 반영(다른 토큰과 랭킹 계산까지) ·
+  서버 완전 불통에도 예외 없이 로컬로 대체(콘솔 에러 0)

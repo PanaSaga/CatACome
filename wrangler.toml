@@ -1,0 +1,12 @@
+name = "catacome"
+# 정적 자산은 public/에서만 서빙한다. wrangler.toml·migrations·functions까지 통째로
+# 배포되면 스키마·설정이 공개 URL로 그대로 노출된다 — 배포 워크플로가 index.html·
+# styles.css·src/만 이 폴더로 복사한다 (예전 GitHub Pages dist/ 스테이징과 동일한 이유).
+pages_build_output_dir = "public"
+compatibility_date = "2025-06-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "catacome"
+# cf-bootstrap 워크플로가 최초 실행 시 실제 값으로 이 줄을 자동 커밋한다.
+database_id = "REPLACE_AFTER_BOOTSTRAP"

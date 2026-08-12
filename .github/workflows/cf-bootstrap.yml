@@ -1,0 +1,80 @@
+name: Cloudflare 1회 부트스트랩 (D1 · Pages 프로젝트)
+
+# 이 저장소를 처음 Cloudflare에 연결할 때 딱 한 번, Actions 탭에서 직접 실행한다.
+# D1 데이터베이스·Pages 프로젝트가 이미 있으면 그대로 재사용하므로 다시 눌러도 안전하다.
+# wrangler d1 create는 최신 버전에서 대화형 확인을 물어 CI에서 멈출 수 있어, 이 스텝들은
+# Cloudflare REST API를 curl로 직접 불러 비대화형으로 만든다. SQL 적용·배포처럼 원래도
+# 비대화형인 부분만 wrangler CLI를 쓴다.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: D1 데이터베이스 확보 (있으면 재사용)
+        id: d1
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+          AUTH=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")
+
+          existing=$(curl -sS "${AUTH[@]}" "${API}/d1/database?name=catacome" | jq -r '.result[0].uuid // empty')
+          if [ -n "$existing" ]; then
+            echo "기존 DB 재사용: $existing"
+            id="$existing"
+          else
+            resp=$(curl -sS -X POST "${AUTH[@]}" "${API}/d1/database" --data '{"name":"catacome"}')
+            if [ "$(echo "$resp" | jq -r '.success')" != "true" ]; then
+              echo "D1 생성 실패: $resp" >&2
+              exit 1
+            fi
+            id=$(echo "$resp" | jq -r '.result.uuid')
+            echo "새 DB 생성: $id"
+          fi
+          echo "id=${id}" >> "$GITHUB_OUTPUT"
+
+      - name: Pages 프로젝트 확보 (있으면 그대로 둔다)
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+          AUTH=(-H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -H "Content-Type: application/json")
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' "${AUTH[@]}" "${API}/pages/projects/catacome")
+          if [ "$code" = "200" ]; then
+            echo "Pages 프로젝트 이미 있음"
+          else
+            curl -sS -X POST "${AUTH[@]}" "${API}/pages/projects" \
+              --data "{\"name\":\"catacome\",\"production_branch\":\"${GITHUB_REF_NAME}\"}"
+            echo
+          fi
+
+      - name: wrangler.toml에 database_id 반영
+        run: |
+          sed -i "s/^database_id = .*/database_id = \"${{ steps.d1.outputs.id }}\"/" wrangler.toml
+          cat wrangler.toml
+
+      - name: 스키마 적용 (원격 D1)
+        run: npx wrangler d1 execute catacome --remote --file=migrations/0001_init.sql
+
+      - name: wrangler.toml 변경 커밋
+        run: |
+          git config user.name "cf-bootstrap"
+          git config user.email "actions@users.noreply.github.com"
+          if git diff --quiet -- wrangler.toml; then
+            echo "이미 반영돼 있음 — 커밋 없음"
+          else
+            git add wrangler.toml
+            git commit -m "chore: D1 database_id 반영 (cf-bootstrap 1회 실행)"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi

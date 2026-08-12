@@ -1,18 +1,32 @@
 // ── 백엔드 경계 ────────────────────────────────────────────────────
-// 지금은 전부 localStorage 로컬 스텁이다. 파이어베이스를 붙일 때
-// 이 파일의 함수 본문만 교체하면 게임 코드는 손대지 않아도 된다.
+// Cloudflare Pages Functions + D1 (functions/api/*, migrations/0001_init.sql).
+// 실제로 호출되는 함수만 서버와 통신한다. fetchMarkers·postCorpse·lootCorpse는
+// 게임 어디서도 호출되지 않는 자리표시자라 그대로 로컬 스텁으로 남겨둔다.
 //
-//   loadProfile / saveProfile   → Firestore `players/{uid}`
-//   submitRun / fetchLeaderboard→ Firestore `runs`, `leaderboards`
-//   postFlag / fetchMarkers     → Firestore `flags` (지리 박스 질의)
-//   postCorpse / lootCorpse     → Cloud Function (원자적 선착순 지급)
-//   moderate                    → Cloud Function (사전 + Claude Haiku 1콜)
+//   loadProfile / saveProfile   → GET/POST /api/profile
+//   submitRun / fetchLeaderboard→ POST /api/runs · GET /api/leaderboard
+//   postFlag                    → POST /api/flags
+//   moderate                    → 1~2단계만 클라이언트. 3단계 LLM 판정은 서버 몫으로
+//                                  남겨둔 미구현 (별도 바인딩·비용 결정이 필요하다)
 //
-// 서버 불통 시에도 채굴·전투·성장은 정상 진행돼야 한다 (§11-2).
+// 서버 요청은 전부 실패해도 무시한다 — 로컬에 먼저 쓰고 나서 보내므로,
+// 채굴·전투·성장은 네트워크 상태와 무관하게 진행된다 (§11-2).
 
 import { FLAG } from '../data/balance.js';
 
-export const BACKEND = { kind: 'local', online: false, note: '파이어베이스 미연결 — 로컬 저장' };
+export const BACKEND = { kind: 'cloudflare', online: true, note: 'Cloudflare Pages + D1' };
+const API_TIMEOUT = 4000;
+
+/** 실패(네트워크 오류·타임아웃·비-2xx)하면 조용히 null. 호출부가 로컬로 대체한다. */
+async function apiFetch(path, opts = {}) {
+  try {
+    const res = await fetch(path, { ...opts, signal: AbortSignal.timeout(API_TIMEOUT) });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 /** 시즌 시드. 서버가 배포되면 서버 값을 쓴다 (§6-1) */
 export const SEASON = { id: '2026-S1', seed: 20260811 };
@@ -62,36 +76,50 @@ export function defaultProfile() {
 }
 
 export async function loadProfile() {
-  const p = read(K.profile, null);
-  if (!p) return defaultProfile();
+  const token = anonToken();
   const base = defaultProfile();
+  const remote = await apiFetch('/api/profile', { headers: { 'x-player-token': token } });
+
   // 시즌이 바뀌면 업그레이드·예치금만 승계 (§6-5)
-  if (p.season !== SEASON.id) {
-    return { ...base, upgrades: p.upgrades ?? base.upgrades, bank: p.bank ?? 0, name: p.name ?? '' };
-  }
-  return { ...base, ...p, upgrades: { ...base.upgrades, ...(p.upgrades || {}) } };
+  const finish = (p) => {
+    const merged = p.season !== SEASON.id
+      ? { ...base, upgrades: p.upgrades ?? base.upgrades, bank: p.bank ?? 0, name: p.name ?? '' }
+      : { ...base, ...p, upgrades: { ...base.upgrades, ...(p.upgrades || {}) } };
+    write(K.profile, merged); // 다음 오프라인 기동을 위한 캐시
+    return merged;
+  };
+
+  if (remote?.ok && remote.profile) return finish(remote.profile);
+  // 서버 불통이거나 서버에 아직 기록이 없다 — 로컬 캐시로 대체
+  const local = read(K.profile, null);
+  return local ? finish(local) : base;
 }
 
 export async function saveProfile(p) {
-  return write(K.profile, p);
-}
-
-export async function submitRun(run) {
-  const runs = read(K.runs, []);
-  runs.push({
-    name: run.name, token: anonToken(), season: SEASON.id,
-    depth: Math.round(run.depth), cats: run.cats, at: Date.now(),
-  });
-  // 로컬 스텁은 최근 500건만 유지
-  write(K.runs, runs.slice(-500));
+  write(K.profile, p); // 네트워크를 기다리지 않고 즉시 반영
+  apiFetch('/api/profile', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-player-token': p.token || anonToken() },
+    body: JSON.stringify(p),
+  }); // 실패해도 무시 — 다음 저장 때 다시 보내진다 (§11-2)
   return true;
 }
 
-/**
- * @param {'depth'|'cats'|'seasonCats'} kind
- * @returns {Promise<{top: Array, me: object|null, myRank: number}>}
- */
-export async function fetchLeaderboard(kind = 'depth') {
+export async function submitRun(run) {
+  const token = anonToken();
+  const runs = read(K.runs, []);
+  runs.push({ name: run.name, token, season: SEASON.id, depth: Math.round(run.depth), cats: run.cats, at: Date.now() });
+  // 오프라인 폴백용 — 서버가 살아 있으면 리더보드는 서버 값을 쓰므로 최근 500건만 유지
+  write(K.runs, runs.slice(-500));
+  apiFetch('/api/runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-player-token': token },
+    body: JSON.stringify({ name: run.name, season: SEASON.id, depth: run.depth, cats: run.cats }),
+  });
+  return true;
+}
+
+function localLeaderboard(kind) {
   const runs = read(K.runs, []).filter((r) => r.season === SEASON.id);
   const token = anonToken();
   let rows;
@@ -119,6 +147,20 @@ export async function fetchLeaderboard(kind = 'depth') {
   return { top: rows.slice(0, 10), me, myRank: me ? me.rank : 0 };
 }
 
+/**
+ * @param {'depth'|'cats'|'seasonCats'} kind
+ * @returns {Promise<{top: Array, me: object|null, myRank: number}>}
+ */
+export async function fetchLeaderboard(kind = 'depth') {
+  const token = anonToken();
+  const remote = await apiFetch(
+    `/api/leaderboard?kind=${encodeURIComponent(kind)}&season=${encodeURIComponent(SEASON.id)}`,
+    { headers: { 'x-player-token': token } },
+  );
+  // 서버 값은 전체 플레이어 집계라 로컬(내 기록만)보다 항상 우선한다
+  return remote ?? localLeaderboard(kind);
+}
+
 // ── 비동기 멀티 (§6) — 서버가 붙기 전까지 로컬만 ──────────────────
 export async function fetchMarkers() {
   // 파이어베이스 연결 후: 지리 박스 질의로 남의 플래그·시체를 받아온다
@@ -129,6 +171,11 @@ export async function postFlag(flag) {
   const flags = read(K.flags, []);
   flags.push({ ...flag, at: Date.now() });
   write(K.flags, flags.slice(-200));
+  apiFetch('/api/flags', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(flag),
+  });
   return true;
 }
 
