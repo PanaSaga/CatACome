@@ -9,4 +9,4 @@ compatibility_date = "2025-06-01"
 binding = "DB"
 database_name = "catacome"
 # cf-bootstrap 워크플로가 최초 실행 시 실제 값으로 이 줄을 자동 커밋한다.
-database_id = "REPLACE_AFTER_BOOTSTRAP"
+database_id = "ed36f629-ffcb-4200-a991-85250f0aac76"
