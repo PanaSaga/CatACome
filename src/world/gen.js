@@ -1,9 +1,8 @@
 // 절차 생성 — 순수 함수. 같은 좌표는 항상 같은 결과 (§11-2)
 import { MAT, ORE, pack, matOf, isSolidMat, hardnessOf } from './tiles.js';
 import { hash2, uniformFbm3 } from './rng.js';
-import { tutorialOwns, tutorialTile, TUT_HALF_W } from './tutorial.js';
 import {
-  WORLD_HALF_W, DEPTH_CAP_M, M_PER_TILE, CHUNK,
+  WORLD_HALF_W, DEPTH_CAP_M, M_PER_TILE, CHUNK, SURFACE_FLAT_HALF_W, HOUSE_GROUND_PROTECT,
   HARDNESS_BANDS, ORE_TABLE, STATION_DEPTHS, STATION_SPACING_X,
 } from '../data/balance.js';
 
@@ -27,14 +26,9 @@ export class Gen {
     STATION_DEPTHS.forEach((m, i) => {
       const y = yOfDepth(m);
       for (let k = -span; k <= span; k++) {
-        // E1 중앙 한 대는 튜토리얼 고정 배치와 좌표를 맞춘다 (§5-1)
-        const forced = i === 0 && k === 0;
         // 깊이마다 흔들어 수직으로 줄 서지 않게 한다
         const jitter = Math.round((hash2(i, k, this.seed + 91) * 2 - 1) * STATION_SPACING_X * 0.35);
-        const x = forced ? 31 : k * STATION_SPACING_X + jitter;
-        // 튜토리얼 구간은 tutorialTile이 먼저 처리해 승강기 칸이 파이지 않는다.
-        // 그 안에 정거장을 두면 엘리베이터로 내려왔을 때 암반에 박힌다.
-        if (!forced && tutorialOwns(x, y)) continue;
+        const x = k * STATION_SPACING_X + jitter;
         this.stations.push({ index: i + 1, sub: k, depthM: m, x, y });
       }
     });
@@ -50,9 +44,9 @@ export class Gen {
 
   surfaceY(x) {
     const ax = Math.abs(x);
-    if (ax <= TUT_HALF_W) return 0;
+    if (ax <= SURFACE_FLAT_HALF_W) return 0;
     const n = uniformFbm3(x * 0.04, 0.5, this.seed + 7) * 10 - 3;
-    const t = Math.min(1, (ax - TUT_HALF_W) / 25);
+    const t = Math.min(1, (ax - SURFACE_FLAT_HALF_W) / 25);
     return Math.floor(n * t);
   }
 
@@ -69,7 +63,6 @@ export class Gen {
    * 안은 비어 있어야 엘리베이터로 내려왔을 때(travelTo) 암반 속에 박히지 않는다.
    * 발판 폭도 구조물이 그려지는 s.x−2 ~ s.x+1로 줄였다. 불괴 재질인 발판을
    * 예전처럼 15칸 깔면 암반 속에 파낼 수 없는 가로벽이 생긴다 (§5-6).
-   * 튜토리얼 구간(|x| ≤ 40, y ≤ 101)은 tutorialTile이 먼저 처리하므로 E1 방은 그대로다.
    */
   stationTile(x, y) {
     for (const s of this.stationsNear(y)) {
@@ -122,7 +115,8 @@ export class Gen {
   tileAt(x, y) {
     if (x <= -WORLD_HALF_W || x >= WORLD_HALF_W) return pack(MAT.BEDROCK);
     if (depthM(y) >= DEPTH_CAP_M) return pack(MAT.BEDROCK);
-    if (tutorialOwns(x, y)) return tutorialTile(x, y, this.seed);
+    const hp = HOUSE_GROUND_PROTECT;
+    if (x >= hp.x0 && x <= hp.x1 && y >= hp.y0 && y <= hp.y1) return pack(MAT.TUTWALL);
 
     const st = this.stationTile(x, y);
     if (st >= 0) return st;

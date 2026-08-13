@@ -5,6 +5,11 @@ export const M_PER_TILE = 0.5;
 export const CHUNK = 32;
 export const WORLD_HALF_W = 400;
 export const DEPTH_CAP_M = 1000000;
+// 지상 스폰 근처 평지 폭(타일) — 이 안쪽은 지표면 높이를 0으로 고정한다
+export const SURFACE_FLAT_HALF_W = 40;
+// 집 주변 지상 타일은 파괴 불가 — 엘리베이터로 올라올 때 자기가 파 놓은
+// 갱도로 떨어지는 일이 없게 한다. entity/objects.js의 HOUSE와 좌표를 맞춘다.
+export const HOUSE_GROUND_PROTECT = { x0: 2, y0: 0, x1: 13, y1: 1 };
 
 export const FPS = 60;
 export const DT = 1 / FPS;
@@ -34,13 +39,16 @@ export const ORE_TABLE = {
 export const ORE_NAME = { 1: '구리', 2: '은', 3: '금' };
 
 // ── 곡괭이 (§3-1) ────────────────────────────────────────────────
-export const PICK_CD = [0.45, 0.38, 0.30, 0.24, 0.18];
+// 레벨 캡 5→8 (§7 확장). 뒤 3칸은 기존 증가폭을 그대로 이어 붙였다.
+export const LEVEL_CAP = 8;
+export const PICK_CD = [0.45, 0.38, 0.30, 0.24, 0.18, 0.14, 0.11, 0.09];
 export const PICK_REACH = 5; // 타일
 // 커서 주변 공격 반경. 파괴 대상이 없어도(공중의 박쥐 등) 이 원 안의 적은 맞는다.
 // 적 히트박스 여유(ENEMY_HIT_PAD)와 합쳐지므로 실제 체감은 이보다 넉넉하다.
 export const PICK_HIT_R = 22; // px
-export const GRADE_DMG = [1, 1, 2, 2, 3, 4]; // 등급 1~5 + 6(플래그 버프)
-export const ITEM_DMG = [2, 2, 3, 3, 4, 5]; // 폭탄·드릴·레이저 Lv1~5 + 6(버프)
+// 등급 1~8 + 9(플래그 버프 — 항상 최고 레벨보다 한 단계 위)
+export const GRADE_DMG = [1, 1, 2, 2, 3, 3, 4, 4, 5];
+export const ITEM_DMG = [2, 2, 3, 3, 4, 4, 5, 5, 6]; // 폭탄·드릴·레이저 Lv1~8 + 9(버프)
 
 export const clinicCap = (grade) => 50 * Math.pow(5, grade - 1);
 export const clinicCost = (n, grade) => Math.min(5 * Math.pow(2, n - 1), clinicCap(grade));
@@ -50,12 +58,16 @@ export const bankFeeRate = (grade) => grade / 100;
 // 반경은 계획서 값(16·20·24·28·30타일)의 0.5배다. Lv1이 4m로 좁아지고,
 // 계획서의 Lv1 범위(8m)는 Lv5(7.5m)에 가서야 나온다.
 // 쿨다운은 그대로. 여기만 고치면 HUD·상점 표기도 함께 따라온다.
+// Lv6~8은 레벨 캡 확장(§7)으로 늘어난 자리 — 기존 증가폭을 이어 붙였다.
 export const SONAR = [
   { r: 8, cd: 7.0 },
   { r: 10, cd: 5.5 },
   { r: 12, cd: 4.0 },
   { r: 14, cd: 2.5 },
   { r: 15, cd: 1.5 },
+  { r: 16, cd: 1.1 },
+  { r: 17, cd: 0.8 },
+  { r: 18, cd: 0.6 },
 ];
 export const SONAR_WAVE_TIME = 0.4;
 
@@ -68,27 +80,29 @@ export const MARK_PULSE_T = 1.1;  // 링 한 겹이 끝까지 퍼지는 시간(�
 export const SONAR_MOLE_PULL = 3; // 타일
 
 // ── 소모 아이템 (§3-4) ───────────────────────────────────────────
+// 인덱스는 Lv1~8 + 9(플래그 버프 — 항상 최고 레벨보다 세다). 뒤 3칸(Lv6~8)은
+// 레벨 캡 확장(§7)으로 늘어난 자리, 마지막 칸은 기존 "버프" 자리를 한 칸 밀어 넣었다.
 export const BOMB = {
-  radius: [2, 2.75, 3.5, 4.25, 5, 5.75],
-  oreBonus: [0, 0.12, 0.25, 0.38, 0.5, 0.62],
-  fuse: [2.0, 1.75, 1.5, 1.25, 1.0, 0.75],
+  radius: [2, 2.75, 3.5, 4.25, 5, 5.75, 6.5, 7.25, 8.0],
+  oreBonus: [0, 0.12, 0.25, 0.38, 0.5, 0.62, 0.75, 0.87, 1.0],
+  fuse: [2.0, 1.75, 1.5, 1.25, 1.0, 0.75, 0.55, 0.4, 0.3],
 };
 export const DRILL = {
-  length: [6, 9, 11, 14, 16, 19],
-  width: [1, 1, 2, 2, 3, 4],
-  maxHardness: [2, 2, 3, 3, 4, 4],
-  dps: ITEM_DMG,
+  length: [6, 9, 11, 14, 16, 19, 22, 25, 29], // 돌진 거리(타일) — 레벨만큼 늘어난다
+  duration: [0.35, 0.42, 0.5, 0.58, 0.66, 0.74, 0.82, 0.9, 1.0], // 돌진 지속시간(초, 무적 겸용)
+  width: [1, 1, 2, 2, 3, 4, 4, 5, 5],
+  maxHardness: [2, 2, 3, 3, 4, 4, 4, 4, 4],
 };
 export const LASER = {
-  range: [10, 14, 17, 21, 24, 28],
-  width: [1, 1, 2, 2, 3, 4],
-  oreBonus: [0.25, 0.44, 0.63, 0.81, 1.0, 1.19],
+  range: [10, 14, 17, 21, 24, 28, 32, 36, 41],
+  width: [1, 1, 2, 2, 3, 4, 4, 5, 5],
+  oreBonus: [0.25, 0.44, 0.63, 0.81, 1.0, 1.19, 1.38, 1.57, 1.8],
   cd: 0.35,
 };
 export const FLAG = {
-  heal: [1, 1, 1, 2, 2],
-  buffSec: [60, 90, 120, 150, 180],
-  sonarBonusM: [0, 2, 4, 6, 10],
+  heal: [1, 1, 1, 2, 2, 2, 3, 3],
+  buffSec: [60, 90, 120, 150, 180, 210, 240, 270],
+  sonarBonusM: [0, 2, 4, 6, 10, 13, 16, 20],
   msgLen: 30,
 };
 export const POTION = { 1: { heal: 1, name: '하급' }, 2: { heal: 2, name: '중급' }, 3: { heal: 3, name: '상급' } };
@@ -134,15 +148,16 @@ export const CENTI_RESURFACE = [5, 8];
 export const DYNAMITE = { fuse: 1.5, radius: 3, chain: 3, gap: 0.8, enemyDmg: 5 };
 
 // ── 진행 (§5) ────────────────────────────────────────────────────
+// 레벨 캡 5→8(§7)에 맞춰 뒤 3칸을 기존 배율(대략 ×4~5)로 이어 붙였다.
 export const PRICES = {
-  pickSpeed: [8, 40, 200, 1000],
-  pickRange: [8, 40, 200, 1000],
-  sonar: [8, 32, 128, 500],
+  pickSpeed: [8, 40, 200, 1000, 5000, 25000, 125000],
+  pickRange: [8, 40, 200, 1000, 5000, 25000, 125000],
+  sonar: [8, 32, 128, 500, 2000, 8000, 32000],
   grapple: [50, 200, 800],
-  bomb: [5, 20, 80, 320],
-  drill: [5, 20, 80, 320],
-  laser: [5, 20, 80, 320],
-  flag: [5, 20, 80, 320],
+  bomb: [5, 20, 80, 320, 1280, 5120, 20480],
+  drill: [5, 20, 80, 320, 1280, 5120, 20480],
+  laser: [5, 20, 80, 320, 1280, 5120, 20480],
+  flag: [5, 20, 80, 320, 1280, 5120, 20480],
   maxHp: [500, 2000],
 };
 export const SHOP_PRICE = { bomb: 8, drill: 25, laser: 40, flag: 15 };
@@ -154,7 +169,13 @@ export const CHEST_GRADES = [
   { grade: 3, name: '전설', p: 0.2, minH: 3 },
 ];
 
-export const CAT_SPACING_M = [20, 30];
+// 청크당 등장 확률 — 고양이는 보물상자의 80% 밀도 (§5-4)
+export const CHEST_DENSITY = 0.6;
+export const CAT_DENSITY = CHEST_DENSITY * 0.8;
+export const CAT_CARRY_MAX = 3;
+// 인계 보너스 — 한 번에 데려온 마리수만큼 배율이 붙는다 (§5-4)
+export const CAT_BASE_REWARD = 10;
+export const CAT_BATCH_BONUS = 0.25;
 
 // ── 정거장 (§5-6) ────────────────────────────────────────────────
 // 간격(n) = min(50 × 1.15^(n−2), 300) 을 5m 단위로 정리한 값이 계획서 표다.

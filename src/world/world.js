@@ -9,9 +9,9 @@ import { CHUNK, TILE, ORE_TABLE } from '../data/balance.js';
 
 const CH_PX = CHUNK * TILE;
 const CACHE_MAX = 420;
-// 물 흐름 — 발밑이 비면 내려가고, 막히면 "아래가 빈 옆칸"으로만 한 칸 옮긴다.
-// 옆으로 갈 조건에 "그 칸의 아래도 비어 있어야" 한다는 제약이 있어 좌우로
-// 무한히 왕복하지 않고, 물 타일 수도 늘지 않는다(자리를 옮길 뿐이다).
+// 액체 흐름(물·용암 공용) — 발밑이 비면 내려가고, 막히면 "아래가 빈 옆칸"으로만
+// 한 칸 옮긴다. 옆으로 갈 조건에 "그 칸의 아래도 비어 있어야" 한다는 제약이 있어
+// 좌우로 무한히 왕복하지 않고, 액체 타일 수도 늘지 않는다(자리를 옮길 뿐이다).
 const WATER_TICK = 0.09;   // 초 — 흐름 갱신 간격
 const WATER_BUDGET = 260;  // 한 번에 평가할 칸 수 상한
 const QUEUE_CAP = 8000;
@@ -145,17 +145,19 @@ export class World {
   }
 
   /**
-   * 물 한 칸의 이동. 아래가 비면 내려가고, 막히면 아래가 빈 옆칸으로 옮긴다.
+   * 액체 한 칸의 이동(물·용암 공용). 아래가 비면 내려가고, 막히면 아래가 빈
+   * 옆칸으로 옮긴다. 좌우 모두 막힌 액체는(§1) 그 자리에 그대로 머문다.
    * @returns {boolean} 움직였는가
    */
   waterStep(x, y) {
-    if (this.mat(x, y) !== MAT.WATER) return false;
+    const liquid = this.mat(x, y);
+    if (!isLiquidMat(liquid)) return false;
     const move = (nx, ny) => {
-      this.set(nx, ny, pack(MAT.WATER));
+      this.set(nx, ny, pack(liquid));
       this.set(x, y, pack(MAT.AIR));
       this.wake(x, y);
       this.wake(nx, ny);
-      // 물이 빠진 자리 위의 모래도 다시 평가한다
+      // 액체가 빠진 자리 위의 모래도 다시 평가한다
       this.checkQueue.push([x, y - 1], [x - 1, y - 1], [x + 1, y - 1]);
       return true;
     };

@@ -1,9 +1,8 @@
 // CAT A COME — 런 상태 머신 · 고정 타임스텝 루프
 import {
-  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG,
+  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG, LEVEL_CAP,
 } from './data/balance.js';
 import { World } from './world/world.js';
-import { TUT_SPAWNS, TUT_HINTS } from './world/tutorial.js';
 import { Player } from './entity/player.js';
 import { Grapple } from './entity/grapple.js';
 import { Enemies } from './entity/enemies.js';
@@ -17,7 +16,7 @@ import { Input } from './core/input.js';
 import { Hud } from './ui/hud.js';
 import { Panels } from './ui/panels.js';
 import {
-  loadProfile, saveProfile, submitRun, postFlag, moderateName, SEASON, BACKEND,
+  loadProfile, saveProfile, submitRun, postFlag, postCorpse, moderateName, SEASON, BACKEND,
 } from './net/api.js';
 
 const rgb = (c) => `rgb(${c[0]},${c[1]},${c[2]})`;
@@ -46,7 +45,6 @@ class Game {
     this.aim = { x: 0, y: 0, dx: 1, dy: 0 };
     this.buff = { t: 0, sonarM: 0 };
     this.flash = 0;
-    this.safeReturnT = 0;
     this.acc = 0;
     this.lastTs = 0;
     this.paused = true;
@@ -55,7 +53,9 @@ class Game {
 
   async boot() {
     this.profile = await loadProfile();
-    this.world = new World(SEASON.seed);
+    // 세션(탭)마다 새 맵 — 고정 시드를 쓰지 않고 기동할 때마다 새로 뽑는다 (§8)
+    this.seed = Math.floor(Math.random() * 0x7fffffff);
+    this.world = new World(this.seed);
     this.player = new Player(this);
     this.grapple = new Grapple(this);
     this.enemies = new Enemies(this);
@@ -68,7 +68,7 @@ class Game {
     this.resize();
 
     document.getElementById('backendNote').textContent =
-      `${BACKEND.note} · 시즌 ${SEASON.id} (시드 ${SEASON.seed})`;
+      `${BACKEND.note} · 시즌 ${SEASON.id} (맵 시드 ${this.seed})`;
     const nameInput = document.getElementById('nameInput');
     nameInput.value = this.profile.name || '';
     const start = () => {
@@ -80,10 +80,16 @@ class Game {
       this.hud.show();
       this.sfx.resume();
       this.startRun();
+      if (!this.profile.controlsSeen) {
+        this.profile.controlsSeen = true;
+        this.saveProfile();
+        this.panels.openControls();
+      }
     };
     document.getElementById('startBtn').addEventListener('click', start);
     nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
     document.getElementById('boardBtn').addEventListener('click', () => this.panels.openLeaderboard('start'));
+    document.getElementById('controlsBtn').addEventListener('click', () => this.panels.openControls());
 
     this.installDebug();
     requestAnimationFrame((t) => this.frame(t));
@@ -129,15 +135,11 @@ class Game {
     this.player.hp = this.player.maxHp;
     this.grapple.clear();
 
-    // 튜토리얼 고정 배치
-    this.objects.addTutorialContent(TUT_SPAWNS);
-    for (const s of TUT_SPAWNS.bat) this.enemies.make('bat', s.x, s.y);
-    for (const s of TUT_SPAWNS.mole) this.enemies.make('mole', s.x, s.y);
-
     this.world.onBreak = null;
     this.camera.follow(this.player, 0, true);
     this.paused = false;
     this.toast(`${this.profile.name} — 내려간다. 폭탄 ${START_BOMBS}개.`, 3000);
+    this.objects.fetchAndApplyMarkers();
   }
 
   killPlayer(cause) {
@@ -161,6 +163,12 @@ class Game {
     this.profile.seasonCats += this.run.catsDelivered;
     this.saveProfile();
     submitRun({ name: this.profile.name, depth: this.run.maxDepth, cats: this.run.catsDelivered });
+    if (this.run.copper > 0) {
+      postCorpse({
+        x: this.player.tileX, y: this.player.tileY, owner: this.profile.name,
+        copper: this.run.copper, cause: summary.cause, season: SEASON.id,
+      });
+    }
     setTimeout(() => this.panels.openDeath(summary), 700);
   }
 
@@ -176,9 +184,9 @@ class Game {
 
   // ── 등급 · 버프 ────────────────────────────────────────────────
   grade() { return Math.min(this.profile.upgrades.pickSpeed, this.profile.upgrades.pickRange); }
-  /** 전투 판정에만 쓰는 등급 — 플래그 버프 시 6 (§3-1) */
-  effGrade() { return this.buff.t > 0 ? 6 : this.grade(); }
-  itemLevel(name) { return this.buff.t > 0 ? 6 : this.profile.upgrades[name]; }
+  /** 전투 판정에만 쓰는 등급 — 플래그 버프 시 항상 최고 레벨보다 한 단계 위 (§3-1) */
+  effGrade() { return this.buff.t > 0 ? LEVEL_CAP + 1 : this.grade(); }
+  itemLevel(name) { return this.buff.t > 0 ? LEVEL_CAP + 1 : this.profile.upgrades[name]; }
   buffSonarTiles() { return this.buff.t > 0 ? this.buff.sonarM / M_PER_TILE : 0; }
 
   inSafeZone() {
@@ -201,10 +209,6 @@ class Game {
   openElevator(st) {
     this.discoverStation(st);
     this.objects.deliverCats(st);
-    if (st.index === 1 && !this.profile.tutorialDone) {
-      this.profile.tutorialDone = true;
-      this.saveProfile();
-    }
     this.panels.openElevator(st);
   }
 
@@ -261,13 +265,6 @@ class Game {
     this.panels.openFlagRead(f, { heal, sec, sonarM });
   }
 
-  tutorialSafeReturn() {
-    if (this.safeReturnT > 0) return;
-    this.safeReturnT = 0.8;
-    this.player.safeReturn();
-    this.toast('안전지대 — 발판으로 복귀', 1400);
-  }
-
   sonarTargets() {
     return [...this.objects.targets(), ...this.enemies.targets()];
   }
@@ -309,7 +306,6 @@ class Game {
     this.aim.dy = this.aim.y - this.player.eyeY;
     if (!this.player.dead) this.player.facing = this.aim.dx >= 0 ? 1 : -1;
 
-    this.safeReturnT = Math.max(0, this.safeReturnT - dt);
     this.flash = Math.max(0, this.flash - dt);
     if (this.buff.t > 0) {
       this.buff.t = Math.max(0, this.buff.t - dt);
@@ -378,7 +374,6 @@ class Game {
     this.drawOverlays(ctx, cam);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (!this.paused) this.hud.update();
-    this.updateHint();
   }
 
   drawBackground(ctx, cam) {
@@ -438,26 +433,17 @@ class Game {
     }
   }
 
-  updateHint() {
-    if (this.paused) return;
-    const d = this.player.depthM;
-    if (this.profile.tutorialDone || d > 52) { this.hud.hint(null); return; }
-    let cur = null;
-    for (const h of TUT_HINTS) if (d >= h.m - 1) cur = h;
-    this.hud.hint(cur ? cur.text : null);
-  }
-
   // ── 디버그 (§8-1) ──────────────────────────────────────────────
   handleDebugKeys(input) {
     const u = this.profile.upgrades;
     if (input.pressed('[')) { u.pickRange = Math.max(1, u.pickRange - 1); this.toast(`범위 Lv${u.pickRange}`); }
-    if (input.pressed(']')) { u.pickRange = Math.min(5, u.pickRange + 1); this.toast(`범위 Lv${u.pickRange}`); }
+    if (input.pressed(']')) { u.pickRange = Math.min(LEVEL_CAP, u.pickRange + 1); this.toast(`범위 Lv${u.pickRange}`); }
     if (input.pressed('-')) { u.pickSpeed = Math.max(1, u.pickSpeed - 1); this.toast(`속도 Lv${u.pickSpeed}`); }
-    if (input.pressed('=')) { u.pickSpeed = Math.min(5, u.pickSpeed + 1); this.toast(`속도 Lv${u.pickSpeed}`); }
+    if (input.pressed('=')) { u.pickSpeed = Math.min(LEVEL_CAP, u.pickSpeed + 1); this.toast(`속도 Lv${u.pickSpeed}`); }
     if (input.pressed(',')) { u.grapple = Math.max(1, u.grapple - 1); this.toast(`갈고리 Lv${u.grapple}`); }
     if (input.pressed('.')) { u.grapple = Math.min(4, u.grapple + 1); this.toast(`갈고리 Lv${u.grapple}`); }
     if (input.pressed(';')) { u.sonar = Math.max(1, u.sonar - 1); this.toast(`소나 Lv${u.sonar}`); }
-    if (input.pressed("'")) { u.sonar = Math.min(5, u.sonar + 1); this.toast(`소나 Lv${u.sonar}`); }
+    if (input.pressed("'")) { u.sonar = Math.min(LEVEL_CAP, u.sonar + 1); this.toast(`소나 Lv${u.sonar}`); }
   }
 
   teleportToDepth(m) {

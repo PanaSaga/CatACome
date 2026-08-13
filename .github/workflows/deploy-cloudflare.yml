@@ -40,7 +40,10 @@ jobs:
           find public -type f | sort
 
       - name: D1 마이그레이션 적용
-        run: npx wrangler d1 execute catacome --remote --file=migrations/0001_init.sql
+        # 각 파일이 CREATE TABLE/INDEX IF NOT EXISTS라 순서대로 다시 실행해도 안전하다.
+        run: |
+          npx wrangler d1 execute catacome --remote --file=migrations/0001_init.sql
+          npx wrangler d1 execute catacome --remote --file=migrations/0002_corpses.sql
 
       - name: Pages 배포
         run: npx wrangler pages deploy public --project-name=catacome --branch="${GITHUB_REF_NAME}" --commit-dirty=true

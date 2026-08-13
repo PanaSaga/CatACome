@@ -1,5 +1,4 @@
--- 프로필 · 리더보드 · 플래그. net/api.js가 실제로 부르는 것만 만든다
--- (fetchMarkers·postCorpse·lootCorpse는 게임 코드에서 호출되지 않아 테이블도 없다).
+-- 프로필 · 리더보드 · 플래그. 시체 테이블은 0002_corpses.sql에서 따로 만든다.
 
 CREATE TABLE IF NOT EXISTS profiles (
   token TEXT PRIMARY KEY,

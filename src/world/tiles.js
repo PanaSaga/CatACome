@@ -12,8 +12,8 @@ export const MAT = {
   LAVA: 7,
   SAND: 8,
   DYNAMITE: 9,
-  REINFORCED: 10, // 폭발로만 파괴 (튜토리얼 폭탄 벽)
-  TUTWALL: 11,    // 완전 불괴 (튜토리얼 갈고리 공동 벽 · 집 주변)
+  REINFORCED: 10, // 폭발로만 파괴 (§9 원격 마커 보강 발판)
+  TUTWALL: 11,    // 완전 불괴 (집 주변 지상 보호)
   STATION: 12,    // 정거장 구조물
 };
 

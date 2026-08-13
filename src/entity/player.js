@@ -1,7 +1,6 @@
 // 플레이어 물리 · HP · 낙하 · 액체
 import { MAT, isSolidMat, matOf } from '../world/tiles.js';
 import { TILE, FALL_STEPS, INVULN, BREATH_MAX, DROWN_GRACE, LAVA_TICK, M_PER_TILE } from '../data/balance.js';
-import { SAFE_ZONE, SAFE_RESPAWN } from '../world/tutorial.js';
 
 const EPS = 0.01;
 // 충돌 상자를 좌우 1px씩 안쪽으로 줄인다. 플레이어 폭이 타일 폭과 정확히 같으면
@@ -62,6 +61,7 @@ export class Player {
     this.swingT = 0;
     this.swingAng = 0;
     this.suppressJump = false;
+    this.dashing = 0; // 드릴 돌진 중 — Tools가 위치를 직접 몬다 (§5-2)
     this.dead = false;
   }
 
@@ -138,6 +138,13 @@ export class Player {
     this.invuln = Math.max(0, this.invuln - dt);
     this.jumpLock = Math.max(0, this.jumpLock - dt);
     this.swingT = Math.max(0, this.swingT - dt);
+
+    // ── 드릴 돌진 — Tools.update()가 위치·파괴를 직접 몬다 (§5-2) ──
+    if (this.dashing > 0) {
+      this.dashing = Math.max(0, this.dashing - dt);
+      return;
+    }
+
     this.sampleLiquids(world);
 
     // ── 매몰 ────────────────────────────────────────────────────
@@ -188,7 +195,7 @@ export class Player {
       this.onGround = true;
       let dmg = 0;
       for (const s of FALL_STEPS) if (tiles >= s.tiles) dmg = s.dmg;
-      if (dmg > 0 && !this.inSafeCavity()) {
+      if (dmg > 0) {
         this.jumpLock = 0.4; // 착지 경직
         this.damage(dmg, '낙하');
       }
@@ -201,12 +208,6 @@ export class Player {
     }
 
     this.snapToGrid(world);
-
-    // ── 튜토리얼 안전지대 ───────────────────────────────────────
-    if (this.inSafeCavity()) {
-      this.fallAccum = 0;
-      if (this.tileY >= SAFE_ZONE.y0) this.game.tutorialSafeReturn();
-    }
 
     // ── 숨 · 화상 ───────────────────────────────────────────────
     if (this.submerged) {
@@ -236,19 +237,6 @@ export class Player {
     const limitPx = 399 * TILE;
     if (this.x < -limitPx) { this.x = -limitPx; this.vx = 0; }
     if (this.x > limitPx) { this.x = limitPx; this.vx = 0; }
-  }
-
-  inSafeCavity() {
-    const tx = this.tileX, ty = this.tileY;
-    return tx >= SAFE_ZONE.x0 && tx <= SAFE_ZONE.x1 && ty >= SAFE_ZONE.y0 - 12 && ty <= SAFE_ZONE.y1 + 2;
-  }
-
-  safeReturn() {
-    this.x = SAFE_RESPAWN.x * TILE;
-    this.y = (SAFE_RESPAWN.y - 1) * TILE;
-    this.vx = 0; this.vy = 0;
-    this.fallAccum = 0;
-    this.airJumps = this.airJumpsMax;
   }
 
   /** 충돌 판정 — 좌우를 COL_INSET만큼 줄인 상자로 검사한다 */

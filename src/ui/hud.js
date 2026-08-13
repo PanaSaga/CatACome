@@ -1,5 +1,5 @@
 import { SLOTS, SLOT_ICON } from '../tool/tools.js';
-import { BREATH_MAX, GRAPPLE_RANGE, currencyText, STATION_DEPTHS, PICK_CD } from '../data/balance.js';
+import { BREATH_MAX, GRAPPLE_RANGE, currencyText, STATION_DEPTHS, PICK_CD, CAT_CARRY_MAX } from '../data/balance.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -10,11 +10,10 @@ export class Hud {
       hud: $('hud'), hp: $('hp'), breath: $('breath'), buffs: $('buffs'),
       depth: $('depth'), best: $('best'), copper: $('copper'), bank: $('bank'),
       cats: $('cats'), sonar: $('sonar'), grapple: $('grapple'),
-      hotbar: $('hotbar'), scale: $('depthscale'), hint: $('hint'), toasts: $('toasts'),
+      hotbar: $('hotbar'), scale: $('depthscale'), toasts: $('toasts'),
     };
     this.buildHotbar();
     this.tick = 0;
-    this.lastHint = null;
   }
 
   show() { this.el.hud.hidden = false; }
@@ -36,14 +35,6 @@ export class Hud {
     setTimeout(() => d.remove(), ms);
   }
 
-  hint(text) {
-    if (text === this.lastHint) return;
-    this.lastHint = text;
-    if (!text) { this.el.hint.hidden = true; return; }
-    this.el.hint.hidden = false;
-    this.el.hint.textContent = text;
-  }
-
   update() {
     const g = this.game;
     if (++this.tick % 3 !== 0) { this.updateFast(); return; }
@@ -57,7 +48,7 @@ export class Hud {
     this.el.best.textContent = `이번 런 최고 ${g.run.maxDepth.toFixed(1)} m`;
     this.el.copper.textContent = currencyText(g.run.copper);
     this.el.bank.textContent = `예치 ${currencyText(g.profile.bank)}`;
-    this.el.cats.textContent = `🐈 ${g.run.cats.length} / 2 · 인계 ${g.run.catsDelivered}`;
+    this.el.cats.textContent = `🐈 ${g.run.cats.length} / ${CAT_CARRY_MAX} · 인계 ${g.run.catsDelivered}`;
 
     const s = g.sonar;
     const auto = s.canAuto ? (s.auto ? ' · 자동 ON' : ' · 자동 OFF') : '';

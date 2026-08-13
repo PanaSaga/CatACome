@@ -1,11 +1,10 @@
 // ── 백엔드 경계 ────────────────────────────────────────────────────
 // Cloudflare Pages Functions + D1 (functions/api/*, migrations/0001_init.sql).
-// 실제로 호출되는 함수만 서버와 통신한다. fetchMarkers·postCorpse·lootCorpse는
-// 게임 어디서도 호출되지 않는 자리표시자라 그대로 로컬 스텁으로 남겨둔다.
 //
 //   loadProfile / saveProfile   → GET/POST /api/profile
 //   submitRun / fetchLeaderboard→ POST /api/runs · GET /api/leaderboard
-//   postFlag                    → POST /api/flags
+//   postFlag / fetchMarkers     → POST /api/flags · GET /api/flags + /api/corpses
+//   postCorpse / lootCorpse     → POST /api/corpses · POST /api/corpses/loot
 //   moderate                    → 1~2단계만 클라이언트. 3단계 LLM 판정은 서버 몫으로
 //                                  남겨둔 미구현 (별도 바인딩·비용 결정이 필요하다)
 //
@@ -71,7 +70,7 @@ export function defaultProfile() {
     bestDepth: 0,
     bestCats: 0,
     clinicUses: 0,
-    tutorialDone: false,
+    controlsSeen: false,
   };
 }
 
@@ -161,10 +160,18 @@ export async function fetchLeaderboard(kind = 'depth') {
   return remote ?? localLeaderboard(kind);
 }
 
-// ── 비동기 멀티 (§6) — 서버가 붙기 전까지 로컬만 ──────────────────
+// ── 비동기 멀티 (§9) — 남의 플래그·시체를 받아와 화면에 얹는다 ─────
+const K_CORPSE_SEEN = 'cac.corpseSeen.v1';
+
 export async function fetchMarkers() {
-  // 파이어베이스 연결 후: 지리 박스 질의로 남의 플래그·시체를 받아온다
-  return { flags: [], corpses: [] };
+  const [flagsRes, corpsesRes] = await Promise.all([
+    apiFetch(`/api/flags?season=${encodeURIComponent(SEASON.id)}`),
+    apiFetch(`/api/corpses?season=${encodeURIComponent(SEASON.id)}`),
+  ]);
+  return {
+    flags: (flagsRes && flagsRes.flags) || [],
+    corpses: (corpsesRes && corpsesRes.corpses) || [],
+  };
 }
 
 export async function postFlag(flag) {
@@ -179,8 +186,27 @@ export async function postFlag(flag) {
   return true;
 }
 
-export async function postCorpse() { return false; }
-export async function lootCorpse() { return { ok: false, reason: 'offline' }; }
+export async function postCorpse(corpse) {
+  const res = await apiFetch('/api/corpses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(corpse),
+  });
+  return !!(res && res.ok);
+}
+
+export async function lootCorpse(id) {
+  const seen = read(K_CORPSE_SEEN, []);
+  if (seen.includes(id)) return { ok: false, reason: 'already-looted' };
+  const res = await apiFetch('/api/corpses/loot', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-player-token': anonToken() },
+    body: JSON.stringify({ id }),
+  });
+  if (!res) return { ok: false, reason: 'offline' };
+  if (res.ok) write(K_CORPSE_SEEN, [...seen, id].slice(-500));
+  return res;
+}
 
 // ── 모더레이션 1~2단계 (§6-3). 3단계 LLM 판정은 서버 몫 ───────────
 const BANNED = ['시발', '씨발', 'ㅅㅂ', '병신', 'ㅂㅅ', '개새', '좆', 'fuck', 'shit', 'bitch', 'asshole', '니애미', '느금'];

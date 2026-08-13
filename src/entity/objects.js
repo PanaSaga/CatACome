@@ -1,18 +1,30 @@
-// 고양이 · 보물상자 · 정거장 · 플래그 · 지상의 집
-import { TILE, ZOOM, CHUNK, CHEST_GRADES, POTION, M_PER_TILE, FLAG } from '../data/balance.js';
+// 고양이 · 보물상자 · 정거장 · 플래그 · 시체 · 지상의 집
+import {
+  TILE, ZOOM, CHUNK, CHEST_GRADES, POTION, M_PER_TILE, FLAG,
+  CHEST_DENSITY, CAT_DENSITY, CAT_CARRY_MAX, CAT_BASE_REWARD, CAT_BATCH_BONUS,
+} from '../data/balance.js';
 import { hash2, mulberry32 } from '../world/rng.js';
-import { MAT, isDiggable } from '../world/tiles.js';
+import { MAT, pack, isDiggable } from '../world/tiles.js';
+import { fetchMarkers, lootCorpse as lootCorpseApi } from '../net/api.js';
 
 export const HOUSE = { x0: 3, y0: -5, x1: 11, y1: -1, doorX: 7 };
 // 지상 스폰/복귀 지점 = 집 문 앞. 집 주변 지상 타일(x 2~13, y 0~1)은 파괴 불가라
 // 엘리베이터로 올라올 때 자기가 파 놓은 갱도로 떨어지는 일이 없다.
 // 굴착은 집에서 왼쪽으로 걸어 나온 x ≤ 1에서 시작한다.
 export const SURFACE_SPAWN = { x: HOUSE.doorX, y: -3 };
-const CAT_BAND_M = 25;
 const ITEM_KINDS = ['bomb', 'drill', 'laser', 'flag'];
-const INTERACT_R = 2.5; // 타일 — 상자·고양이·플래그 공통 사거리
+const INTERACT_R = 2.5; // 타일 — 상자·고양이·플래그·시체 공통 사거리
 const DROP_G = 620;     // px/s² — 발밑이 사라진 상자·고양이의 낙하 가속
 const DROP_MAX_V = 260; // px/s
+
+// 순수 장식용 — 점수·능력에는 아무 차이가 없다 (§5-4)
+export const CAT_BREEDS = [
+  { name: '까망이', body: '#2b2b2f', accent: '#1a1a1d' },
+  { name: '치즈', body: '#e8a33d', accent: '#c97f22' },
+  { name: '흰둥이', body: '#f2efe6', accent: '#cfc8b6' },
+  { name: '고등어', body: '#7c8494', accent: '#4c525e' },
+  { name: '회색이', body: '#9a9aa0', accent: '#6d6d74' },
+];
 
 export class Objects {
   constructor(game) {
@@ -25,6 +37,7 @@ export class Objects {
     this.cats = [];
     this.stations = [];
     this.flags = [];
+    this.corpses = [];
     this.spawned = new Set();
     this.nextId = 1;
     this.readFlags = new Set();
@@ -53,13 +66,11 @@ export class Objects {
     }
 
     if (cy < 0) return;
-    // 첫 50m는 고정 배치 구간 (§5-1)
-    if (cy <= 3 && cx >= -2 && cx <= 1) return;
 
     const rnd = mulberry32((cx * 40503) ^ (cy * 90001) ^ (gen.seed + 5));
 
     // 보물상자 — 밀도 · 등급은 주변 최대 경도로 게이트 (§5-7)
-    if (rnd() < 0.6) {
+    if (rnd() < CHEST_DENSITY) {
       for (let t = 0; t < 30; t++) {
         const tx = cx * CHUNK + Math.floor(rnd() * CHUNK);
         const ty = cy * CHUNK + Math.floor(rnd() * CHUNK);
@@ -71,19 +82,16 @@ export class Objects {
       }
     }
 
-    // 고양이 — 깊이 20~30m마다 1마리
-    const y0 = cy * CHUNK, y1 = y0 + CHUNK - 1;
-    for (let b = 2; b <= 400; b++) {
-      const depth = CAT_BAND_M * b + hash2(b, 1, gen.seed + 13) * 10 - 5;
-      const ty = Math.round(depth / M_PER_TILE);
-      if (ty < y0 || ty > y1) continue;
-      const tx = Math.round((hash2(b, 2, gen.seed + 17) * 2 - 1) * 250);
-      if (Math.floor(tx / CHUNK) !== cx) continue;
-      if (this.cats.some((c) => c.band === b)) continue;
-      const spot = this.findBuriable(tx, ty);
-      if (spot) {
-        this.cats.push({ id: this.id('K'), band: b, x: spot.x, y: spot.y, carried: false });
-        this.hollow(spot.x, spot.y);
+    // 고양이 — 상자와 같은 방식, 밀도는 80% (§5-4)
+    if (rnd() < CAT_DENSITY) {
+      for (let t = 0; t < 30; t++) {
+        const tx = cx * CHUNK + Math.floor(rnd() * CHUNK);
+        const ty = cy * CHUNK + Math.floor(rnd() * CHUNK);
+        if (!this.buriable(tx, ty)) continue;
+        const breed = Math.floor(rnd() * CAT_BREEDS.length);
+        this.cats.push({ id: this.id('K'), x: tx, y: ty, carried: false, breed });
+        this.hollow(tx, ty);
+        break;
       }
     }
   }
@@ -151,14 +159,30 @@ export class Objects {
     return ok[0].grade;
   }
 
-  addTutorialContent(spawns) {
-    for (const c of spawns.chest || []) {
-      this.chests.push({ id: this.id('C'), x: c.x, y: c.y, grade: c.grade, opened: false, tutorial: true });
-      this.hollow(c.x, c.y);
+  /**
+   * 서버에서 다른 플레이어의 플래그·시체를 받아와 합친다. 이 세션의 지형은
+   * 다른 시드로 생성됐을 수 있으니, 마커가 놓인 자리 밑에 보강 발판 3칸을
+   * 강제로 깔아 항상 딛고 설 수 있게 한다 (§9).
+   */
+  async fetchAndApplyMarkers() {
+    const data = await fetchMarkers();
+    if (!data) return;
+    const world = this.game.world;
+    const reinforce = (x, y) => {
+      world.set(x, y, pack(MAT.AIR));
+      for (let dx = -1; dx <= 1; dx++) world.set(x + dx, y + 1, pack(MAT.REINFORCED));
+    };
+    for (const f of data.flags || []) {
+      if (this.flags.some((x) => x.remoteId === f.id)) continue;
+      const x = Math.round(f.x), y = Math.round(f.y);
+      reinforce(x, y);
+      this.flags.push({ id: this.id('F'), remoteId: f.id, x, y, msg: f.msg, level: f.level, owner: f.owner, mine: false });
     }
-    for (const c of spawns.cat || []) {
-      this.cats.push({ id: this.id('K'), band: -1, x: c.x, y: c.y, carried: false });
-      this.hollow(c.x, c.y);
+    for (const c of data.corpses || []) {
+      if (this.corpses.some((x) => x.remoteId === c.id)) continue;
+      const x = Math.round(c.x), y = Math.round(c.y);
+      reinforce(x, y);
+      this.corpses.push({ id: this.id('R'), remoteId: c.id, x, y, owner: c.owner, copper: c.copper, cause: c.cause, looted: false });
     }
   }
 
@@ -175,6 +199,7 @@ export class Objects {
     for (const c of this.cats) if (!c.carried) out.push({ id: c.id, x: c.x * TILE + 8, y: c.y * TILE + 8, kind: 'cat', ref: c });
     for (const s of this.stations) out.push({ id: s.id, x: s.x * TILE + 8, y: s.y * TILE + 8, kind: 'station', ref: s });
     for (const f of this.flags) out.push({ id: f.id, x: f.x * TILE + 8, y: f.y * TILE + 8, kind: 'flag', ref: f });
+    for (const c of this.corpses) if (!c.looted) out.push({ id: c.id, x: c.x * TILE + 8, y: c.y * TILE + 8, kind: 'corpse', ref: c });
     return out;
   }
 
@@ -184,6 +209,7 @@ export class Objects {
     for (const c of this.cats) if (!c.carried) s.add(c.id);
     for (const t of this.stations) s.add(t.id);
     for (const f of this.flags) s.add(f.id);
+    for (const c of this.corpses) if (!c.looted) s.add(c.id);
     return s;
   }
 
@@ -236,6 +262,10 @@ export class Objects {
     for (const f of this.flags) {
       if (this.near(f.x, f.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'flag', ref: f };
     }
+    for (const c of this.corpses) {
+      if (c.looted) continue;
+      if (this.near(c.x, c.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'corpse', ref: c };
+    }
     return null;
   }
 
@@ -250,8 +280,23 @@ export class Objects {
       case 'chest': this.openChest(t.ref); break;
       case 'cat': this.pickCat(t.ref); break;
       case 'flag': g.readFlag(t.ref); break;
+      case 'corpse': this.lootCorpse(t.ref); break;
     }
     return t.kind;
+  }
+
+  async lootCorpse(c) {
+    const g = this.game;
+    c.looted = true; // 낙관적으로 즉시 잠금 — 서버가 거절해도 클라에서는 이미 비운 자리다
+    const res = c.remoteId ? await lootCorpseApi(c.remoteId) : { ok: true, copper: c.copper };
+    const gained = res && res.ok ? (res.copper ?? c.copper) : 0;
+    if (gained > 0) {
+      g.gainCopper(gained);
+      g.sfx.play('pickup');
+      g.toast(`${c.owner || '누군가'}의 무덤에서 ${gained}구리를 주웠다`);
+    } else {
+      g.toast('이미 누가 털어 간 무덤이다');
+    }
   }
 
   openChest(c) {
@@ -259,16 +304,12 @@ export class Objects {
     c.opened = true;
     const rnd = mulberry32((c.x * 7919) ^ (c.y * 104729) ^ g.world.gen.seed);
     const lines = [];
-    if (c.tutorial) {
-      for (const k of ['drill', 'laser', 'flag']) { g.run.items[k] = (g.run.items[k] | 0) + 1; lines.push(`${k} +1`); }
-    } else {
-      const n = c.grade === 3 ? 3 : c.grade === 2 ? 2 + Math.floor(rnd() * 2) : 1 + Math.floor(rnd() * 2);
-      for (let i = 0; i < n; i++) {
-        const k = ITEM_KINDS[Math.floor(rnd() * ITEM_KINDS.length)];
-        const amt = k === 'bomb' ? 2 : 1;
-        g.run.items[k] = (g.run.items[k] | 0) + amt;
-        lines.push(`${k} +${amt}`);
-      }
+    const n = c.grade === 3 ? 3 : c.grade === 2 ? 2 + Math.floor(rnd() * 2) : 1 + Math.floor(rnd() * 2);
+    for (let i = 0; i < n; i++) {
+      const k = ITEM_KINDS[Math.floor(rnd() * ITEM_KINDS.length)];
+      const amt = k === 'bomb' ? 2 : 1;
+      g.run.items[k] = (g.run.items[k] | 0) + amt;
+      lines.push(`${k} +${amt}`);
     }
     g.run.potions[c.grade] = (g.run.potions[c.grade] | 0) + 1;
     lines.push(`${POTION[c.grade].name} 포션 +1`);
@@ -281,14 +322,14 @@ export class Objects {
 
   pickCat(c) {
     const g = this.game;
-    if (g.run.cats.length >= 2) { g.toast('고양이는 동시에 2마리까지'); g.sfx.play('error'); return; }
+    if (g.run.cats.length >= CAT_CARRY_MAX) { g.toast(`고양이는 동시에 ${CAT_CARRY_MAX}마리까지`); g.sfx.play('error'); return; }
     c.carried = true;
     g.run.cats.push(c);
     g.sfx.play('cat');
-    g.toast('고양이를 업었다');
+    g.toast(`${CAT_BREEDS[c.breed ?? 0].name}를 업었다`);
   }
 
-  /** 집·정거장에서 인계 */
+  /** 집·정거장에서 인계 — 한 번에 많이 데려올수록 마리당 보너스가 붙는다 (§5-4) */
   deliverCats(station) {
     const g = this.game;
     if (g.run.cats.length === 0) return 0;
@@ -300,8 +341,10 @@ export class Objects {
     g.run.cats = [];
     g.run.catsDelivered += n;
     if (station) station.cats += n;
+    const bonus = Math.round(CAT_BASE_REWARD * n * (1 + CAT_BATCH_BONUS * (n - 1)));
+    g.gainCopper(bonus);
     g.sfx.play('deliver');
-    g.toast(`고양이 ${n}마리 인계 — 누적 ${g.run.catsDelivered}마리`);
+    g.toast(`고양이 ${n}마리 인계 (+${bonus}구리) — 누적 ${g.run.catsDelivered}마리`);
     return n;
   }
 
@@ -387,7 +430,7 @@ export class Objects {
     for (const c of this.cats) {
       if (c.carried) continue;
       const x = c.x * TILE - cam.x, y = c.y * TILE + (c.oy || 0) - cam.y;
-      this.drawCat(ctx, x, y);
+      this.drawCat(ctx, x, y, 1, c.breed);
       if (target && target.kind === 'cat' && target.ref === c) {
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = 1;
@@ -398,7 +441,7 @@ export class Objects {
     // 업고 있는 고양이
     const p = this.game.player;
     this.game.run.cats.forEach((c, i) => {
-      this.drawCat(ctx, p.x - cam.x + (i === 0 ? -2 : 6), p.y - cam.y - 12 - i * 3, 0.85);
+      this.drawCat(ctx, p.x - cam.x + (i === 0 ? -2 : 6), p.y - cam.y - 12 - i * 3, 0.85, c.breed);
     });
 
     // 플래그
@@ -415,6 +458,16 @@ export class Objects {
       ctx.fill();
       if (target && target.kind === 'flag' && target.ref === f) {
         this.drawPrompt(ctx, x + 8, this.promptY(f.y, 12) - cam.y, '[E] 읽기');
+      }
+    }
+
+    // 다른 플레이어의 시체 — 무덤 모양 (§10)
+    for (const c of this.corpses) {
+      if (c.looted) continue;
+      const x = c.x * TILE - cam.x, y = c.y * TILE - cam.y;
+      this.drawGrave(ctx, x, y);
+      if (target && target.kind === 'corpse' && target.ref === c) {
+        this.drawPrompt(ctx, x + 8, this.promptY(c.y, 12) - cam.y, '[E] 뒤지기');
       }
     }
   }
@@ -448,20 +501,44 @@ export class Objects {
     ctx.restore();
   }
 
-  drawCat(ctx, x, y, scale = 1) {
+  drawCat(ctx, x, y, scale = 1, breed = 0) {
+    const b = CAT_BREEDS[breed] || CAT_BREEDS[0];
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
-    ctx.fillStyle = '#e8a33d';
+    ctx.fillStyle = b.body;
     ctx.fillRect(2, 6, 12, 8);
     ctx.fillRect(11, 2, 6, 6);
     ctx.fillStyle = '#3a2b20';
     ctx.fillRect(13, 4, 1, 1);
     ctx.fillRect(16, 4, 1, 1);
-    ctx.fillStyle = '#e8a33d';
+    ctx.fillStyle = b.accent;
     ctx.fillRect(11, 0, 2, 3);
     ctx.fillRect(15, 0, 2, 3);
     ctx.fillRect(0, 2, 2, 6);
     ctx.restore();
+  }
+
+  /** 다른 플레이어가 죽은 자리 — 비석 모양 (§10) */
+  drawGrave(ctx, x, y) {
+    ctx.fillStyle = '#4a4a52';
+    ctx.beginPath();
+    ctx.moveTo(x + 3, y + 16);
+    ctx.lineTo(x + 3, y + 6);
+    ctx.arc(x + 8, y + 6, 5, Math.PI, 0);
+    ctx.lineTo(x + 13, y + 16);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#2f2f36';
+    ctx.fillRect(x + 3, y + 14, 10, 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 3); ctx.lineTo(x + 8, y + 11);
+    ctx.moveTo(x + 5.5, y + 6); ctx.lineTo(x + 10.5, y + 6);
+    ctx.stroke();
+    ctx.fillStyle = '#7a8060';
+    ctx.fillRect(x, y + 15, 3, 3);
+    ctx.fillRect(x + 13, y + 15, 3, 3);
   }
 }

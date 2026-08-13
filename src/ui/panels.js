@@ -1,20 +1,20 @@
 // 지상의 집(5개 탭) · 엘리베이터 · 인벤토리 · 랭킹 · 플래그 · 사망
 // 패널이 열려 있는 동안 게임 조작은 잠기고, 항목은 전부 마우스 클릭으로 선택한다 (§2)
 import {
-  PRICES, SHOP_PRICE, SELL_RATE, POTION, FLAG, GRAPPLE_RANGE, SONAR,
+  PRICES, SHOP_PRICE, SELL_RATE, POTION, FLAG, GRAPPLE_RANGE, SONAR, LEVEL_CAP, CAT_CARRY_MAX,
   PICK_CD, HP_LEVELS, clinicCost, clinicCap, bankFeeRate, currencyText, M_PER_TILE,
 } from '../data/balance.js';
 import { fetchLeaderboard, moderate, BACKEND, SEASON } from '../net/api.js';
 
 const UPGRADES = [
-  { key: 'pickSpeed', name: '곡괭이 속도', max: 5, detail: (lv) => `스윙 쿨 ${PICK_CD[lv - 1]}s` },
-  { key: 'pickRange', name: '곡괭이 범위', max: 5, detail: (lv) => `Lv${lv} — 흙 ${lv}×${lv}` },
-  { key: 'sonar', name: '소나', max: 5, detail: (lv) => `반경 ${(SONAR[lv - 1].r * M_PER_TILE)}m · 쿨 ${SONAR[lv - 1].cd}s${lv >= 3 ? ' · 자동' : ''}` },
+  { key: 'pickSpeed', name: '곡괭이 속도', max: LEVEL_CAP, detail: (lv) => `스윙 쿨 ${PICK_CD[lv - 1]}s` },
+  { key: 'pickRange', name: '곡괭이 범위', max: LEVEL_CAP, detail: (lv) => `Lv${lv} — 흙 ${lv}×${lv}` },
+  { key: 'sonar', name: '소나', max: LEVEL_CAP, detail: (lv) => `반경 ${(SONAR[lv - 1].r * M_PER_TILE)}m · 쿨 ${SONAR[lv - 1].cd}s${lv >= 3 ? ' · 자동' : ''}` },
   { key: 'grapple', name: '갈고리', max: 4, detail: (lv) => `사거리 ${GRAPPLE_RANGE[lv - 1]}타일` },
-  { key: 'bomb', name: '폭탄', max: 5, detail: (lv) => `Lv${lv}` },
-  { key: 'drill', name: '드릴', max: 5, detail: (lv) => `Lv${lv}` },
-  { key: 'laser', name: '레이저', max: 5, detail: (lv) => `Lv${lv}` },
-  { key: 'flag', name: '플래그', max: 5, detail: (lv) => `버프 ${FLAG.buffSec[lv - 1] / 60}분 · 소나 +${FLAG.sonarBonusM[lv - 1]}m` },
+  { key: 'bomb', name: '폭탄', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
+  { key: 'drill', name: '드릴', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
+  { key: 'laser', name: '레이저', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
+  { key: 'flag', name: '플래그', max: LEVEL_CAP, detail: (lv) => `버프 ${FLAG.buffSec[lv - 1] / 60}분 · 소나 +${FLAG.sonarBonusM[lv - 1]}m` },
   { key: 'maxHp', name: '최대 HP', max: 3, detail: (lv) => `HP ${HP_LEVELS[lv - 1]}` },
 ];
 
@@ -299,12 +299,36 @@ export class Panels {
             <tr><td>은행 예치금 <span class="tag dim">사망해도 보존</span></td><td class="num mono">${currencyText(g.profile.bank)}</td></tr>
             ${SHOP_ITEMS.map((i) => `<tr><td>${i.name} <span class="tag dim">Lv${g.profile.upgrades[i.key]}</span></td><td class="num mono">${g.run.items[i.key] | 0}</td></tr>`).join('')}
             ${[1, 2, 3].map((k) => `<tr><td>${POTION[k].name} 포션 <span class="tag dim">HP +${POTION[k].heal}</span></td><td class="num mono">${g.run.potions[k] | 0}</td></tr>`).join('')}
-            <tr><td>운반 중인 고양이</td><td class="num mono">${g.run.cats.length} / 2</td></tr>
+            <tr><td>운반 중인 고양이</td><td class="num mono">${g.run.cats.length} / ${CAT_CARRY_MAX}</td></tr>
             <tr><td>이번 런 인계</td><td class="num mono">${g.run.catsDelivered}</td></tr>
             <tr><td>이번 런 최고 깊이</td><td class="num mono">${g.run.maxDepth.toFixed(1)} m</td></tr>
           </tbody></table>
         </div>
         <footer><span class="dim">시즌 ${SEASON.id} · ${BACKEND.note}</span><button data-close class="ghost">닫기 (Tab/Esc)</button></footer>
+      </div>`);
+  }
+
+  // ── 조작법 ────────────────────────────────────────────────────
+  openControls() {
+    this.render('controls', `
+      <div class="panel" style="min-width:420px">
+        <header><h2>조작법</h2></header>
+        <div class="body">
+          <table><tbody>
+            <tr><td class="mono">W A S D</td><td>이동 (물속 60% · 용암 40%)</td></tr>
+            <tr><td class="mono">Space</td><td>점프 → 공중 점프 → (갈고리 중) 해제+상승 / (수중) 연타 부력</td></tr>
+            <tr><td class="mono">좌클릭</td><td>장착 도구 사용 · 매몰 시 연타로 탈출</td></tr>
+            <tr><td class="mono">Shift / 우클릭</td><td>갈고리 발사(홀드) — 붙으면 자동 견인</td></tr>
+            <tr><td class="mono">R</td><td>소나 (Lv3부터 자동 소나 ON/OFF 토글)</td></tr>
+            <tr><td class="mono">휠 · 1~6</td><td>슬롯 전환 (곡괭이·폭탄·드릴·레이저·플래그·포션)</td></tr>
+            <tr><td class="mono">E</td><td>상호작용 — 집 · 정거장 · 상자 · 고양이 업기 · 플래그 · 시체</td></tr>
+            <tr><td class="mono">Tab</td><td>인벤토리 · Esc 닫기</td></tr>
+          </tbody></table>
+          <p class="dim" style="margin-top:12px">바라보는 방향은 항상 마우스 커서 방향이다. 드릴은 조준 방향으로 무적
+            돌진하며 땅을 뚫고, 레이저는 조준 방향으로 땅을 관통한다 — 둘 다 레벨이
+            오르면 사거리가 늘어난다.</p>
+        </div>
+        <footer><span></span><button data-close class="primary">확인</button></footer>
       </div>`);
   }
 

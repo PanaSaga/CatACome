@@ -48,6 +48,7 @@ html, body {
 .hud-tr { position: absolute; top: 12px; right: 14px; text-align: right; }
 .hud-bl { position: absolute; bottom: 74px; left: 14px; }
 .hud-br { position: absolute; bottom: 10px; right: 14px; text-align: right; }
+.hud-btn { pointer-events: auto; margin-bottom: 6px; display: block; }
 
 .hearts { font-size: 18px; letter-spacing: 2px; }
 .depth { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -162,22 +163,6 @@ html, body {
   animation: pop 0.18s ease-out;
 }
 @keyframes pop { from { opacity: 0; transform: translateY(-6px); } }
-
-.hint {
-  position: fixed;
-  bottom: 78px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(12, 12, 16, 0.88);
-  border: 1px solid rgba(242, 196, 55, 0.5);
-  color: #f6e6b8;
-  padding: 8px 16px;
-  border-radius: 20px;
-  font-size: 13px;
-  z-index: 35;
-  max-width: 80vw;
-  text-align: center;
-}
 
 /* ── 패널 ────────────────────────────────────────────────────── */
 .modal, .overlay {

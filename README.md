@@ -22,10 +22,10 @@ python3 -m http.server 5175   # → http://localhost:5175/index.html
 |---|---|---|
 | 프로필(업그레이드·예치금·시즌 누적) | `GET/POST /api/profile` | localStorage로 즉시 대체, 재접속 시 재시도 |
 | 랭킹 3종(최고 깊이·최다 구출·시즌 누적) | `GET /api/leaderboard` | 내 기록만 로컬 집계 |
-| 플래그 남기기 | `POST /api/flags` | 내 화면엔 그대로 보이고, 서버 전송만 실패 |
-| 타인 플래그·시체 열람/루팅 | 미구현 (`fetchMarkers`/`postCorpse`/`lootCorpse`가 로컬 스텁) | 해당 없음 |
+| 플래그 남기기·열람 | `GET/POST /api/flags` | 내 화면엔 그대로 보이고, 서버 전송/열람만 실패 |
+| 타인 시체 남기기·루팅 | `GET/POST /api/corpses` · `POST /api/corpses/loot` | 서버 왕복만 실패, 내 런은 계속된다 |
 | 메시지 모더레이션 | 1~2단계만 클라이언트 (입력 제한·사전·자소 복원·l33t) | 3단계 서버 LLM 판정은 별도 바인딩·비용 결정이 필요해 미구현 |
-| 시즌 시드 | 상수 `SEASON.seed = 20260811` | — |
+| 맵 시드 | 세션(탭)마다 새로 뽑는다 — 새로고침하면 새 맵 | — |
 
 저장은 항상 **로컬을 먼저** 쓰고 서버 요청은 fire-and-forget으로 뒤따라 보낸다 — 실패해도
 무시하고 다음 저장 때 다시 보내므로, 서버가 죽어도 채굴·전투·성장은 막히지 않는다 (§11-2).
@@ -35,7 +35,8 @@ python3 -m http.server 5175   # → http://localhost:5175/index.html
 ```
 wrangler.toml                  Pages 프로젝트 설정 + D1 바인딩(DB)
 migrations/0001_init.sql       profiles · runs · flags 3개 테이블
-functions/api/*.js             Pages Functions — net/api.js가 실제로 부르는 4개만 구현
+migrations/0002_corpses.sql    corpses 테이블 (타인 시체 §9)
+functions/api/*.js             Pages Functions — net/api.js가 실제로 부르는 엔드포인트
 .github/workflows/
   cf-bootstrap.yml             Actions 탭에서 딱 한 번 수동 실행 — D1·Pages 프로젝트 생성
   deploy-cloudflare.yml        push마다 자동 배포 (index.html·styles.css·src/만 public/에 스테이징)
@@ -53,10 +54,10 @@ export async function loadProfile()                  // → profile 객체
 export async function saveProfile(profile)           // → boolean
 export async function submitRun({name, depth, cats}) // → boolean
 export async function fetchLeaderboard(kind)         // → {top:[{rank,name,value}], me, myRank}
-export async function fetchMarkers(box)              // → {flags:[], corpses:[]}  (미구현)
+export async function fetchMarkers()                 // → {flags:[], corpses:[]}
 export async function postFlag(flag)                 // → boolean
-export async function postCorpse(corpse)             // → boolean  (미구현)
-export async function lootCorpse(id)                 // → {ok, reason}  (미구현)
+export async function postCorpse(corpse)             // → boolean
+export async function lootCorpse(id)                 // → {ok, reason?, copper?}
 export function moderate(text, maxLen)               // → {ok, reason, text}  (1~2단계)
 ```
 
@@ -72,11 +73,16 @@ export function moderate(text, maxLen)               // → {ok, reason, text}  
 | **`Shift`** 또는 **우클릭** (홀드) | 갈고리 발사 — 붙으면 즉시 자동 견인 |
 | `R` | 소나 (Lv3부터 자동 소나 ON/OFF 토글) |
 | 휠 · `1`~`6` | 슬롯 전환 (곡괭이·폭탄·드릴·레이저·플래그·포션) |
-| `E` | 상호작용 — 집 · 정거장 · 상자 · 고양이 업기 · 플래그 읽기 |
+| `E` | 상호작용 — 집 · 정거장 · 상자 · 고양이 업기 · 플래그 · 시체 |
 | `Tab` | 인벤토리 · `Esc` 닫기 |
 
 **바라보는 방향 = 항상 마우스 커서 방향.** 패널이 열려 있으면 게임 조작은 전부 잠기고
-항목은 마우스 클릭으로만 선택한다.
+항목은 마우스 클릭으로만 선택한다. 게임을 처음 시작하면 조작법 팝업이 한 번 뜨고,
+이후에는 화면 우상단 **[조작법]** 버튼으로 언제든 다시 볼 수 있다.
+
+드릴(3번 슬롯)은 클릭 한 번으로 바라보는 방향으로 무적 돌진하며 땅을 뚫고 나간다 —
+지속시간·거리가 레벨에 비례한다. 레이저(4번 슬롯)는 바라보는 방향으로 땅을 관통하는
+빔을 쏜다 — 사거리·넓이가 레벨에 비례한다.
 
 디버그 키(개발용): `[` `]` 곡괭이 범위 · `-` `=` 속도 · `,` `.` 갈고리 · `;` `'` 소나.
 콘솔에서 `__game.teleportToDepth(500)`, `__game.state()` 사용 가능.
@@ -85,14 +91,16 @@ export function moderate(text, maxLen)               // → {ok, reason, text}  
 
 ## 구현 범위
 
-**들어간 것** — 무한 깊이 월드(하드캡 10억 m) · 첫 50m 고정 튜토리얼 · 곡괭이 면적/타수 공식 ·
-폭탄·드릴·레이저·플래그·포션 · 즉시 견인 갈고리 · 소나 5단계 · 지하수·용암 · 모래암반 낙하와 매몰 ·
-다이너마이트 3연쇄 · 적 5종(개미·박쥐·거미 분열·두더지 소리추적·지네 히트앤런) · 보물상자 3등급 ·
-고양이 구출/인계 · 정거장 발견과 엘리베이터 · 지상의 집 5개 탭(업그레이드·상점·의료소·은행·엘리베이터) ·
-런/사망 루프와 랭킹 등록 · 절차 생성 SFX.
+**들어간 것** — 세션마다 새로 뽑는 무한 깊이 월드(하드캡 10억 m) · 곡괭이 면적/타수 공식 ·
+폭탄·드릴(무적 돌진 굴착)·레이저(관통 빔)·플래그·포션 · 즉시 견인 갈고리 · 소나 5단계 ·
+지하수·용암(둘 다 좌우로 막히지 않으면 흘러내린다) · 모래암반 낙하와 매몰 · 다이너마이트 3연쇄 ·
+적 5종(개미·박쥐·거미 분열·두더지 소리추적·지네 히트앤런) · 보물상자 3등급 ·
+고양이 구출/인계(품종 5종은 순전히 장식, 최대 3마리 동시 운반, 한 번에 데려올수록 마리당 보너스) ·
+정거장 발견과 엘리베이터 · 지상의 집 5개 탭(업그레이드 1~8·상점·의료소·은행·엘리베이터) ·
+타인 플래그·시체 열람/루팅(마커 주변엔 보강 발판 3칸을 강제로 깐다) · 런/사망 루프와 랭킹 등록(깊이·구출·시즌 누적을 각각 따로 집계) ·
+절차 생성 SFX.
 
-**아직 없는 것** — 타인 플래그·시체 열람(서버는 붙었지만 이 두 기능은 아직 미구현) ·
-굴러가는 바위 · 시즌 종료 처리.
+**아직 없는 것** — 굴러가는 바위 · 시즌 종료 처리.
 
 ### 계획서와 다르게 한 곳
 
@@ -101,7 +109,8 @@ export function moderate(text, maxLen)               // → {ok, reason, text}  
   E15부터 +300m씩 이어간다.
 - **착지 경직 0.4초**는 낙하 피해가 발생한 착지에만 적용한다. 모든 착지에 걸면
   파고 내려가는 리듬이 매번 끊긴다.
-- **드릴 소모**는 연속 사용 1초당 1개. 계획서에 소모 단위가 명시되지 않았다.
+- **드릴**은 계획서의 지속 채굴 대신 클릭 1회 = 돌진 1회로 바꿨다. 사용당 1개 소모하고,
+  돌진 중에는 무적 상태로 땅을 뚫고 나간다 — 지속시간·거리 둘 다 레벨에 비례한다.
 - **플레이어 충돌 상자**를 좌우 1px씩 줄였다. 폭이 타일과 정확히 같으면 1px만 걸친 옆 열이
   지지대가 되어 발밑을 부숴도 떨어지지 않는다. 지면에서 완전히 정지했을 때 3px 미만은
   타일 격자에 미세 정렬한다.
@@ -120,8 +129,7 @@ src/core/input.js              홀드/엣지 구분, 포커스 상실 시 홀드
 src/world/rng.js               결정론 해시 · fbm 노이즈 · 역CDF 균등화
 src/world/tiles.js             타일 재질·경도·색
 src/world/gen.js               순수 함수 절차 생성 (경도·광맥·액체·정거장)
-src/world/tutorial.js          첫 50m 고정 배치
-src/world/world.js             청크 캐시 · 런 단위 변경분 · 렌더 · 낙하블록
+src/world/world.js             청크 캐시 · 런 단위 변경분 · 렌더 · 낙하블록 · 물·용암 흐름
 src/entity/{player,grapple,enemies,objects}.js
 src/tool/{tools,sonar}.js
 src/fx/{camera,particles,sfx}.js
