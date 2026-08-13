@@ -202,6 +202,12 @@ export class Player {
 
     this.snapToGrid(world);
 
+    // ── 가시발판 — 밟으면 아프다(경도 3짜리 함정) (§4-2) ────────
+    // 서 있을 때 발밑 칸(자기 몸이 있는 칸이 아니라 그 바로 아래)을 봐야 한다 —
+    // 바닥 위에 정확히 얹힌 상태에서는 몸이 바닥 칸을 침범하지 않는다.
+    const belowTile = Math.floor((this.y + this.h + 0.5) / TILE);
+    if (world.mat(this.tileX, belowTile) === MAT.SPIKE) this.damage(1, '가시');
+
     // ── 숨 · 화상 ───────────────────────────────────────────────
     if (this.submerged) {
       this.breath -= dt;

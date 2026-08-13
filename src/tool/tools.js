@@ -84,22 +84,16 @@ function maxDiggableH(world, r) {
   return mx;
 }
 
-/** §3-1 파괴 면적·필요 타수 */
-export function pickaxeArea(world, cx, cy, rangeLv, facing) {
-  const tm = world.mat(cx, cy);
-  const baseH = isDiggable(tm) ? hardnessOf(tm) : 1;
-  let side = Math.max(1, rangeLv - baseH + 1);
-  let maxH = baseH;
-  for (let i = 0; i < 6; i++) {
-    const r = rectFor(cx, cy, side, facing);
-    const mh = maxDiggableH(world, r) || baseH;
-    const ns = Math.max(1, rangeLv - mh + 1);
-    maxH = mh;
-    if (ns >= side) break;
-    side = ns;
-  }
-  const hits = Math.max(1, maxH - rangeLv + 1);
+/**
+ * §3-1 파괴 면적·필요 타수. 범위(range)와 공격력(power)은 이제 완전히 분리된 역할이다 —
+ * 범위는 오직 정사각형 한 변의 길이(1x1~3x3)만 정하고, 경도가 세다고 줄지 않는다.
+ * 필요 타수는 오직 공격력과 그 영역의 최대 경도로만 정해진다(공격력 1·경도2 → 2대).
+ */
+export function pickaxeArea(world, cx, cy, rangeLv, powerLv, facing) {
+  const side = rangeLv;
   const r = rectFor(cx, cy, side, facing);
+  const maxH = maxDiggableH(world, r) || 1;
+  const hits = Math.max(1, maxH - powerLv + 1);
   const tiles = [];
   for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) tiles.push([x, y]);
   return { tiles, side, hits, maxH, rect: r };
@@ -303,7 +297,7 @@ export class Tools {
     const rangeLv = g.profile.upgrades.pickRange;
     const speedLv = g.profile.upgrades.pickSpeed;
     // 파낼 블록이 없어도 휘두른다 — 공중의 박쥐를 때릴 수 없으면 안 된다
-    const area = t ? pickaxeArea(world, t.x, t.y, rangeLv, p.facing) : null;
+    const area = t ? pickaxeArea(world, t.x, t.y, rangeLv, g.pickPower(), p.facing) : null;
     const hit = this.attackPoint();
 
     if (area) {
@@ -586,7 +580,7 @@ export class Tools {
       const p = g.player;
       const t = this.name === 'pickaxe' ? this.pickTarget(g.world) : null;
       if (t) {
-        const area = pickaxeArea(g.world, t.x, t.y, g.profile.upgrades.pickRange, p.facing);
+        const area = pickaxeArea(g.world, t.x, t.y, g.profile.upgrades.pickRange, g.pickPower(), p.facing);
         ctx.strokeStyle = 'rgba(255,255,255,0.55)';
         ctx.lineWidth = 1;
         ctx.strokeRect(area.rect.x0 * TILE - cam.x + 0.5, area.rect.y0 * TILE - cam.y + 0.5, area.side * TILE - 1, area.side * TILE - 1);

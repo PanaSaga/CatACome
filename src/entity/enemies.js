@@ -343,7 +343,9 @@ export class Enemies {
           ctx.globalAlpha = 0.45;
         }
       }
-      if (e.state === 'dive') { ctx.globalAlpha = 0; continue; }
+      // 잠수 중엔 그리지 않는다 — globalAlpha를 0으로 두고 continue하면 리셋 없이
+      // 빠져나가 버려서, 곧이어 그려지는 플레이어까지 투명해지는 버그가 있었다 (§4-3)
+      if (e.state === 'dive') continue;
       ctx.fillStyle = e.hurtT > 0 ? '#ffffff' : this.color(e);
       switch (e.type) {
         case 'bat':
@@ -363,11 +365,13 @@ export class Enemies {
             ctx.stroke();
           }
           break;
-        case 'centipede':
+        case 'centipede': {
+          const seg = 6; // 정사각형 마디 — 직사각형 대신 정사각형을 이어붙인 모양
           for (let s = 0; s < 5; s++) {
-            ctx.fillRect(sx + s * 6, sy + Math.sin(e.t * 8 + s) * 2, 5, e.h);
+            ctx.fillRect(sx + s * seg, sy + (e.h - seg) / 2 + Math.sin(e.t * 8 + s) * 2, seg, seg);
           }
           break;
+        }
         default:
           ctx.fillRect(sx, sy + 2, e.w, e.h - 2);
           ctx.fillRect(sx + (e.dir > 0 ? e.w - 3 : 0), sy, 3, 3);

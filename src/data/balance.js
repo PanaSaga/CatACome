@@ -52,9 +52,14 @@ export const ITEM_DMG = [2, 2, 2, 3, 3, 3, 4, 4, 5]; // 폭탄·드릴·레이�
 
 // 곡괭이 공격력 — 범위(pickRange)·속도(pickSpeed)와는 완전히 분리된 별도 트랙이다.
 // 기본(Lv1)은 1로 고정, 업그레이드로 3까지만 올릴 수 있다. 4번째 칸은 플래그
-// 버프용(항상 만렙보다 한 단계 위).
+// 버프용(항상 만렙보다 한 단계 위). 필요 타수(파괴에 몇 번 때려야 하는가)는
+// 오직 이 공격력과 경도로만 정해진다 — 범위와는 이제 아무 관계가 없다.
 export const PICK_POWER_MAX = 3;
 export const PICK_DMG = [1, 2, 3, 4];
+
+// 곡괭이 범위 — 오직 정사각형 한 변의 길이만 정한다(1x1~3x3). 경도가 세다고
+// 줄어들지 않는다 — 그건 이제 공격력의 몫이다.
+export const PICK_RANGE_MAX = 3;
 
 export const clinicCap = (grade) => 50 * Math.pow(5, grade - 1);
 export const clinicCost = (n, grade) => Math.min(5 * Math.pow(2, n - 1), clinicCap(grade));
@@ -125,10 +130,11 @@ export const GRAPPLE_REEL_SPEED = 5.5; // px/frame
 // ── 생존 (§4-1) ──────────────────────────────────────────────────
 export const HP_LEVELS = [3, 4, 5];
 export const INVULN = 1.2;
+// 낙사 범위를 5칸씩 더 줄였다 — 더 낮은 낙차부터 피해가 들어온다.
 export const FALL_STEPS = [
-  { tiles: 16, dmg: 1 },
-  { tiles: 24, dmg: 2 },
-  { tiles: 32, dmg: 3 },
+  { tiles: 11, dmg: 1 },
+  { tiles: 19, dmg: 2 },
+  { tiles: 27, dmg: 3 },
 ];
 export const BREATH_MAX = 15;
 export const DROWN_GRACE = 3;
@@ -161,10 +167,12 @@ export const DYNAMITE = { fuse: 1.5, radius: 3, chain: 3, gap: 0.8, enemyDmg: 5 
 // ── 진행 (§5) ────────────────────────────────────────────────────
 // 레벨 캡 5→8(§7)에 맞춰 7칸(Lv1→2 ... Lv7→8)으로 늘었다. 마지막 한 단(Lv7→8)은
 // 만렙을 찍는 값이니 3~5백금(3000~5000구리)이 들도록 곡선의 끝을 다시 맞췄다 —
-// 곡괭이 속도·범위가 5백금, 소나가 4백금, 폭탄·드릴·레이저·플래그가 3백금.
+// 곡괭이 속도가 5백금, 소나가 4백금, 폭탄·드릴·레이저·플래그가 3백금.
+// 범위·공격력은 레벨이 3단뿐이라(§3-1) 단계별로 나누지 않고, 예전(8단) 가격표의
+// 최댓값을 그대로 매 단계 값으로 썼다 — "업그레이드 비용은 현재 레벨의 최대치".
 export const PRICES = {
   pickSpeed: [8, 25, 70, 200, 580, 1700, 5000],
-  pickRange: [8, 25, 70, 200, 580, 1700, 5000],
+  pickRange: [5000, 5000],
   sonar: [8, 22, 60, 170, 480, 1350, 4000],
   grapple: [50, 200, 800],
   bomb: [5, 14, 40, 115, 330, 950, 3000],
@@ -172,7 +180,7 @@ export const PRICES = {
   laser: [5, 14, 40, 115, 330, 950, 3000],
   flag: [5, 14, 40, 115, 330, 950, 3000],
   maxHp: [500, 2000],
-  pickPower: [40, 150],
+  pickPower: [150, 150],
 };
 export const SHOP_PRICE = { bomb: 50, drill: 800, laser: 100, flag: 120 }; // 5은 · 8금 · 1금 · 1금2은
 export const SELL_RATE = 0.5;

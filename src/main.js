@@ -1,8 +1,9 @@
 // CAT A COME — 런 상태 머신 · 고정 타임스텝 루프
 import {
-  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG, LEVEL_CAP, PICK_POWER_MAX,
+  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG, LEVEL_CAP, PICK_POWER_MAX, PICK_RANGE_MAX,
 } from './data/balance.js';
 import { World } from './world/world.js';
+import { MAT } from './world/tiles.js';
 import { Player } from './entity/player.js';
 import { Grapple } from './entity/grapple.js';
 import { Enemies } from './entity/enemies.js';
@@ -183,9 +184,10 @@ class Game {
   toast(msg, ms) { this.hud.toast(msg, ms); }
 
   // ── 등급 · 버프 ────────────────────────────────────────────────
-  // "곡괭이 등급" — 속도·범위의 최솟값. 은행 수수료·의료소 비용에만 쓰인다.
-  // 곡괭이 공격력(pickPower)과는 완전히 분리된 트랙이다.
-  grade() { return Math.min(this.profile.upgrades.pickSpeed, this.profile.upgrades.pickRange); }
+  // "곡괭이 등급" — 은행 수수료·의료소 비용에만 쓰인다. 곡괭이 속도(pickSpeed)만
+  // 따른다 — 범위(pickRange)는 이제 최대 3단(§3-1)이라 여기 섞으면 만렙을
+  // 3에서 막아버린다. 공격력(pickPower)과도 완전히 분리된 트랙이다.
+  grade() { return this.profile.upgrades.pickSpeed; }
   /** 곡괭이 공격력 — 플래그 버프 시 항상 그 최고 레벨보다 한 단계 위 */
   pickPower() { return this.buff.t > 0 ? PICK_POWER_MAX + 1 : this.profile.upgrades.pickPower; }
   itemLevel(name) { return this.buff.t > 0 ? LEVEL_CAP + 1 : this.profile.upgrades[name]; }
@@ -323,7 +325,10 @@ class Game {
       this.sonar.update(dt, input);
       this.enemies.update(dt, this.world);
       this.objects.update(dt);
-      this.world.updateFalling(dt, (tx, ty, f, moving) => { if (!moving) this.onSandLand(tx, ty); });
+      this.world.updateFalling(dt, (tx, ty, f, moving) => {
+        if (!moving && f.mat === MAT.SAND) this.onSandLand(tx, ty);
+      });
+      this.checkRockContact();
       if (input.pressed('e')) this.objects.interact();
       this.handleDebugKeys(input);
     }
@@ -354,6 +359,22 @@ class Game {
         p.buried = 8;
         p.damage(1, '매몰');
         this.toast('매몰됐다! 좌클릭 연타로 탈출');
+      }
+    }
+  }
+
+  /** 떨어지거나 굴러가는 바위에 닿으면 밀쳐내며 피해 (§4-2 함정) */
+  checkRockContact() {
+    const p = this.player;
+    if (p.dead) return;
+    for (const f of this.world.falling) {
+      if (f.mat !== MAT.ROCK) continue;
+      if (f.x < p.x + p.w && f.x + TILE > p.x && f.y < p.y + p.h && f.y + TILE > p.y) {
+        if (p.damage(1, '바위')) {
+          const kx = Math.sign(p.cx - (f.x + TILE / 2)) || 1;
+          p.vx = kx * 3.2;
+          p.vy = -3.2;
+        }
       }
     }
   }
@@ -439,7 +460,7 @@ class Game {
   handleDebugKeys(input) {
     const u = this.profile.upgrades;
     if (input.pressed('[')) { u.pickRange = Math.max(1, u.pickRange - 1); this.toast(`범위 Lv${u.pickRange}`); }
-    if (input.pressed(']')) { u.pickRange = Math.min(LEVEL_CAP, u.pickRange + 1); this.toast(`범위 Lv${u.pickRange}`); }
+    if (input.pressed(']')) { u.pickRange = Math.min(PICK_RANGE_MAX, u.pickRange + 1); this.toast(`범위 Lv${u.pickRange}`); }
     if (input.pressed('-')) { u.pickSpeed = Math.max(1, u.pickSpeed - 1); this.toast(`속도 Lv${u.pickSpeed}`); }
     if (input.pressed('=')) { u.pickSpeed = Math.min(LEVEL_CAP, u.pickSpeed + 1); this.toast(`속도 Lv${u.pickSpeed}`); }
     if (input.pressed(',')) { u.grapple = Math.max(1, u.grapple - 1); this.toast(`갈고리 Lv${u.grapple}`); }

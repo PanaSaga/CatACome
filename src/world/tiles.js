@@ -15,6 +15,8 @@ export const MAT = {
   REINFORCED: 10, // 폭발로만 파괴 (§9 원격 마커 보강 발판)
   TUTWALL: 11,    // 완전 불괴 (집 주변 지상 보호)
   STATION: 12,    // 정거장 구조물
+  SPIKE: 13,      // 가시발판 — 밟으면 피해 (§4-2 함정)
+  ROCK: 14,       // 굴러떨어지는 바위 — 밑을 파내면 떨어져 굴러간다 (§4-2 함정)
 };
 
 export const ORE = { NONE: 0, COPPER: 1, SILVER: 2, GOLD: 3 };
@@ -38,6 +40,8 @@ const HARDNESS = {
   [MAT.REINFORCED]: Infinity,
   [MAT.TUTWALL]: Infinity,
   [MAT.STATION]: Infinity,
+  [MAT.SPIKE]: 3, // "경도 3짜리 함정"
+  [MAT.ROCK]: 3,
 };
 
 export const hardnessOf = (mat) => HARDNESS[mat] ?? 0;
@@ -45,6 +49,7 @@ export const hardnessOf = (mat) => HARDNESS[mat] ?? 0;
 const SOLID = new Set([
   MAT.DIRT, MAT.STONE, MAT.HARD, MAT.OBS, MAT.BEDROCK,
   MAT.SAND, MAT.DYNAMITE, MAT.REINFORCED, MAT.TUTWALL, MAT.STATION,
+  MAT.SPIKE, MAT.ROCK,
 ]);
 export const isSolidMat = (mat) => SOLID.has(mat);
 export const isLiquidMat = (mat) => mat === MAT.WATER || mat === MAT.LAVA;
@@ -68,6 +73,8 @@ export const MAT_COLOR = {
   [MAT.REINFORCED]: [0x44, 0x3f, 0x52],
   [MAT.TUTWALL]: [0x39, 0x3e, 0x4d],
   [MAT.STATION]: [0xc9, 0xcd, 0xd8],
+  [MAT.SPIKE]: [0x8a, 0x50, 0x50],
+  [MAT.ROCK]: [0x5a, 0x54, 0x4c],
 };
 
 export const ORE_COLOR = {
@@ -96,4 +103,5 @@ export const MAT_NAME = {
   [MAT.BEDROCK]: '기반암', [MAT.WATER]: '지하수', [MAT.LAVA]: '용암',
   [MAT.SAND]: '모래암반', [MAT.DYNAMITE]: '다이너마이트',
   [MAT.REINFORCED]: '보강벽', [MAT.TUTWALL]: '불괴벽', [MAT.STATION]: '정거장',
+  [MAT.SPIKE]: '가시발판', [MAT.ROCK]: '굴러가는 바위',
 };

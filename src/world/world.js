@@ -192,30 +192,59 @@ export class World {
     }
   }
 
-  // ── 낙하블록 (모래암반) · 물 ───────────────────────────────────
+  // ── 낙하블록 (모래암반·바위) · 물 ───────────────────────────────
+  // 바위(ROCK)는 모래와 같은 방식으로 떨어지지만, 바닥에 닿으면 곧장 멈추지
+  // 않고 잠깐 옆으로 굴러가다가 멈춘다 — "굴러떨어지는 바위" 함정 (§4-2).
   updateFalling(dt, onLand) {
     this.updateWater(dt);
     let n = 0;
     while (this.checkQueue.length && n++ < 400) {
       const [x, y] = this.checkQueue.pop();
-      if (this.mat(x, y) !== MAT.SAND) continue;
+      const m = this.mat(x, y);
+      if (m !== MAT.SAND && m !== MAT.ROCK) continue;
       const below = this.mat(x, y + 1);
       if (below === MAT.AIR || isLiquidMat(below)) {
         this.set(x, y, pack(MAT.AIR));
-        this.falling.push({ x: x * TILE, y: y * TILE, vy: 0.5, mat: MAT.SAND });
+        const rollLeft = m === MAT.ROCK ? 3 + Math.floor(hash2(x, y, 0x9c) * 3) : 0;
+        this.falling.push({ x: x * TILE, y: y * TILE, vy: 0.5, mat: m, rollLeft });
         this.checkQueue.push([x, y - 1], [x - 1, y - 1], [x + 1, y - 1]);
       }
     }
     for (let i = this.falling.length - 1; i >= 0; i--) {
       const f = this.falling[i];
+      if (f.rolling) {
+        const ty = Math.floor(f.y / TILE);
+        const nx = f.x + f.rollDir * 1.6;
+        const aheadTx = Math.floor((nx + (f.rollDir > 0 ? TILE - 1 : 0)) / TILE);
+        const blocked = this.isSolid(aheadTx, ty) || !this.isSolid(aheadTx, ty + 1);
+        if (blocked || f.rollLeft <= 0) {
+          const tx = Math.floor(f.x / TILE);
+          this.set(tx, ty, pack(f.mat));
+          this.disturb(tx, ty);
+          if (onLand) onLand(tx, ty, f);
+          this.falling.splice(i, 1);
+          continue;
+        }
+        f.x = nx;
+        f.rollLeft -= 1.6 / TILE;
+        if (onLand) onLand(Math.floor(f.x / TILE), ty, f, true);
+        continue;
+      }
       f.vy = Math.min(f.vy + 0.55, 10);
       const ny = f.y + f.vy;
       const tx = Math.floor(f.x / TILE);
       const bottomTile = Math.floor((ny + TILE - 0.01) / TILE);
       if (this.isSolid(tx, bottomTile)) {
         const rest = bottomTile - 1;
+        f.y = rest * TILE;
+        if (f.mat === MAT.ROCK && f.rollLeft > 0) {
+          f.rolling = true;
+          f.rollDir = hash2(tx, rest, 0x9d) < 0.5 ? -1 : 1;
+          if (onLand) onLand(tx, rest, f, true);
+          continue;
+        }
         f.landed = true;
-        this.set(tx, rest, pack(MAT.SAND));
+        this.set(tx, rest, pack(f.mat));
         this.disturb(tx, rest);
         if (onLand) onLand(tx, rest, f);
         this.falling.splice(i, 1);
@@ -278,6 +307,26 @@ export class World {
           c.fillStyle = '#f0d060';
           c.fillRect(px + 6, py + 1, 4, 4);
         }
+        if (m === MAT.SPIKE) {
+          // 삐죽삐죽한 가시 3개 — 밟으면 아프다는 걸 한눈에 알 수 있게
+          c.fillStyle = '#e0d8d0';
+          for (let k = 0; k < 3; k++) {
+            const bx = px + 2 + k * 4;
+            c.beginPath();
+            c.moveTo(bx, py + TILE - 2);
+            c.lineTo(bx + 2, py + 4);
+            c.lineTo(bx + 4, py + TILE - 2);
+            c.closePath();
+            c.fill();
+          }
+        }
+        if (m === MAT.ROCK) {
+          // 둥근 음영으로 박혀 있는 바위임을 보여준다
+          c.fillStyle = 'rgba(0,0,0,0.28)';
+          c.beginPath();
+          c.arc(px + TILE / 2, py + TILE / 2, TILE / 2 - 2, 0, Math.PI * 2);
+          c.fill();
+        }
         if (m === MAT.REINFORCED || m === MAT.TUTWALL) {
           // 불괴 재질임을 보여주는 테두리 — 흙·돌과 확실히 구별돼야 한다
           c.strokeStyle = 'rgba(150,160,190,0.45)';
@@ -316,10 +365,18 @@ export class World {
         ctx.drawImage(ch.canvas, Math.round(cx * CH_PX - cam.x), Math.round(cy * CH_PX - cam.y));
       }
     }
-    // 낙하 중인 모래
+    // 낙하·회전 중인 모래·바위
     for (const f of this.falling) {
-      ctx.fillStyle = tileShade(MAT.SAND, Math.floor(f.x / TILE), Math.floor(f.y / TILE));
-      ctx.fillRect(Math.round(f.x - cam.x), Math.round(f.y - cam.y), TILE, TILE);
+      const sx = Math.round(f.x - cam.x), sy = Math.round(f.y - cam.y);
+      if (f.mat === MAT.ROCK) {
+        ctx.fillStyle = tileShade(MAT.ROCK, Math.floor(f.x / TILE), Math.floor(f.y / TILE));
+        ctx.beginPath();
+        ctx.arc(sx + TILE / 2, sy + TILE / 2, TILE / 2 - 1, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = tileShade(f.mat, Math.floor(f.x / TILE), Math.floor(f.y / TILE));
+        ctx.fillRect(sx, sy, TILE, TILE);
+      }
     }
   }
 }

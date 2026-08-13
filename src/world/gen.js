@@ -94,6 +94,14 @@ export class Gen {
     if ((h === 2 || h === 3) && hash2(x, y, this.seed + 31) < 0.06) {
       return { mat: MAT.SAND, h: 2, ore: 0 };
     }
+    // 가시발판 — 경도 3(STONE) 바닥에만, 위가 뚫려 있어야 밟을 수 있다 (§4-2 함정)
+    if (h === 2 && this.core(x, y - 1).mat === MAT.AIR && hash2(x, y, this.seed + 71) < 0.02) {
+      return { mat: MAT.SPIKE, h: 2, ore: 0 };
+    }
+    // 굴러떨어지는 바위 — 경도 3(STONE)에 드물게 박혀 있다. 아래를 파내면 떨어진다 (§4-2 함정)
+    if (h === 2 && hash2(x, y, this.seed + 83) < 0.015) {
+      return { mat: MAT.ROCK, h: 2, ore: 0 };
+    }
     // 광맥 — 정해진 경도 안에서만
     let ore = 0;
     const list = ORE_TABLE[h];
