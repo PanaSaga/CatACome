@@ -53,6 +53,7 @@ export class Player {
     this.breath = BREATH_MAX;
     this.drownGrace = DROWN_GRACE;
     this.burn = 0;
+    this.wasInLava = false;
     this.inWater = false;
     this.inLava = false;
     this.submerged = false;
@@ -218,12 +219,13 @@ export class Player {
     }
 
     if (this.inLava) {
+      if (!this.wasInLava) { this.burn = LAVA_TICK; this.wasInLava = true; } // 닿는 순간 1회 즉시 피해
       this.burn += dt;
       if (this.burn >= LAVA_TICK) {
         this.burn = 0;
         this.damage(1, '화상', true);
       }
-    } else this.burn = 0;
+    } else { this.burn = 0; this.wasInLava = false; }
 
     // 월드 좌우 경계
     const limitPx = 399 * TILE;

@@ -2,13 +2,14 @@
 // 패널이 열려 있는 동안 게임 조작은 잠기고, 항목은 전부 마우스 클릭으로 선택한다 (§2)
 import {
   PRICES, SHOP_PRICE, SELL_RATE, POTION, FLAG, GRAPPLE_RANGE, SONAR, LEVEL_CAP, CAT_CARRY_MAX,
-  PICK_CD, HP_LEVELS, DRILL_CHARGE_MAX, clinicCost, clinicCap, bankFeeRate, currencyText, M_PER_TILE,
+  PICK_CD, PICK_DMG, PICK_POWER_MAX, HP_LEVELS, DRILL_CHARGE_MAX, clinicCost, clinicCap, bankFeeRate, currencyText, M_PER_TILE,
 } from '../data/balance.js';
 import { fetchLeaderboard, moderate, BACKEND, SEASON } from '../net/api.js';
 
 const UPGRADES = [
   { key: 'pickSpeed', name: '곡괭이 속도', max: LEVEL_CAP, detail: (lv) => `스윙 쿨 ${PICK_CD[lv - 1]}s` },
   { key: 'pickRange', name: '곡괭이 범위', max: LEVEL_CAP, detail: (lv) => `Lv${lv} — 흙 ${lv}×${lv}` },
+  { key: 'pickPower', name: '곡괭이 공격력', max: PICK_POWER_MAX, detail: (lv) => `공격력 ${PICK_DMG[lv - 1]}` },
   { key: 'sonar', name: '소나', max: LEVEL_CAP, detail: (lv) => `반경 ${(SONAR[lv - 1].r * M_PER_TILE)}m · 쿨 ${SONAR[lv - 1].cd}s${lv >= 3 ? ' · 자동' : ''}` },
   { key: 'grapple', name: '갈고리', max: 4, detail: (lv) => `사거리 ${GRAPPLE_RANGE[lv - 1]}타일` },
   { key: 'bomb', name: '폭탄', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },

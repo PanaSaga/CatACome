@@ -62,7 +62,7 @@ export function defaultProfile() {
     token: anonToken(),
     season: SEASON.id,
     upgrades: {
-      pickSpeed: 1, pickRange: 1, sonar: 1, grapple: 1,
+      pickSpeed: 1, pickRange: 1, pickPower: 1, sonar: 1, grapple: 1,
       bomb: 1, drill: 1, laser: 1, flag: 1, maxHp: 1,
     },
     bank: 0,

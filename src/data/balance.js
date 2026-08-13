@@ -48,9 +48,13 @@ export const PICK_REACH = 5; // 타일
 // 커서 주변 공격 반경. 파괴 대상이 없어도(공중의 박쥐 등) 이 원 안의 적은 맞는다.
 // 적 히트박스 여유(ENEMY_HIT_PAD)와 합쳐지므로 실제 체감은 이보다 넉넉하다.
 export const PICK_HIT_R = 22; // px
-// 등급 1~8 + 9(플래그 버프). 버프 수치는 예전 그대로 — "예전 만렙+1단" 그 자체다.
-export const GRADE_DMG = [1, 1, 1, 2, 2, 2, 3, 3, 4];
 export const ITEM_DMG = [2, 2, 2, 3, 3, 3, 4, 4, 5]; // 폭탄·드릴·레이저 Lv1~8 + 9(버프)
+
+// 곡괭이 공격력 — 범위(pickRange)·속도(pickSpeed)와는 완전히 분리된 별도 트랙이다.
+// 기본(Lv1)은 1로 고정, 업그레이드로 3까지만 올릴 수 있다. 4번째 칸은 플래그
+// 버프용(항상 만렙보다 한 단계 위).
+export const PICK_POWER_MAX = 3;
+export const PICK_DMG = [1, 2, 3, 4];
 
 export const clinicCap = (grade) => 50 * Math.pow(5, grade - 1);
 export const clinicCost = (n, grade) => Math.min(5 * Math.pow(2, n - 1), clinicCap(grade));
@@ -134,12 +138,12 @@ export const LAVA_TICK = 1.2;
 // 속도는 계획서 값(1.1·1.6·1.0·1.3·2.0)의 0.6배다. 플레이어 이동 속도가 2.6이라
 // 예전에는 지네(2.0)·박쥐 돌진(3.0)이 도망칠 수 없을 만큼 빨랐다.
 export const ENEMY = {
-  ant: { hp: 1, minH: 1, speed: 0.66 },
-  bat: { hp: 2, minH: 1, speed: 0.96 },
-  spider: { hp: 3, minH: 1, speed: 0.6 },
-  spiderling: { hp: 1, minH: 1, speed: 0.78 },
-  mole: { hp: 2, minH: 2, speed: 0 },
-  centipede: { hp: 6, minH: 3, speed: 1.2 },
+  ant: { hp: 2, minH: 1, speed: 0.66 },
+  bat: { hp: 3, minH: 1, speed: 0.96 },
+  spider: { hp: 4, minH: 1, speed: 0.6 },
+  spiderling: { hp: 2, minH: 1, speed: 0.78 },
+  mole: { hp: 3, minH: 2, speed: 0 },
+  centipede: { hp: 7, minH: 3, speed: 1.2 },
 };
 export const MOLE_STEP_PX = 42; // 소리를 쫓는 두더지의 초당 이동 상한 (70의 0.6배)
 // 공격 판정용 히트박스 여유. 적 몸집이 타일(16px)보다 작아서 정확히 겨누기 어려우니
@@ -168,6 +172,7 @@ export const PRICES = {
   laser: [5, 14, 40, 115, 330, 950, 3000],
   flag: [5, 14, 40, 115, 330, 950, 3000],
   maxHp: [500, 2000],
+  pickPower: [40, 150],
 };
 export const SHOP_PRICE = { bomb: 50, drill: 800, laser: 100, flag: 120 }; // 5은 · 8금 · 1금 · 1금2은
 export const SELL_RATE = 0.5;

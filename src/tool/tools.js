@@ -1,6 +1,6 @@
 // 곡괭이 · 폭탄 · 드릴 · 레이저 · 플래그 · 포션
 import {
-  TILE, PICK_CD, PICK_REACH, PICK_HIT_R, GRADE_DMG, ITEM_DMG,
+  TILE, PICK_CD, PICK_REACH, PICK_HIT_R, PICK_DMG, ITEM_DMG,
   BOMB, DRILL, DRILL_DRAIN_SEC, LASER, FLAG, POTION, DYNAMITE,
 } from '../data/balance.js';
 import { MAT, matOf, hardnessOf, isDiggable, isBlastable, MAT_COLOR } from '../world/tiles.js';
@@ -320,7 +320,7 @@ export class Tools {
     g.sfx.dig(area ? area.maxH : 1);
     g.enemies.onNoise(1); // 곡괭이 1스윙 = 두더지 1타일 (§4-3)
     // 파괴 영역 + 커서 주변 원을 합쳐 한 번만 판정한다
-    g.enemies.hitSwing(area ? area.tiles : [], hit.x, hit.y, PICK_HIT_R, GRADE_DMG[g.effGrade() - 1]);
+    g.enemies.hitSwing(area ? area.tiles : [], hit.x, hit.y, PICK_HIT_R, PICK_DMG[g.pickPower() - 1]);
     g.particles.spawn(hit.x, hit.y, 3, '#c8b9a0', { spread: 1.4, life: 0.25, size: 2 });
 
     if (area && this.multiCount >= area.hits) {

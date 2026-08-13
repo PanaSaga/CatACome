@@ -1,6 +1,6 @@
 // CAT A COME — 런 상태 머신 · 고정 타임스텝 루프
 import {
-  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG, LEVEL_CAP,
+  TILE, DT, ZOOM, M_PER_TILE, HP_LEVELS, START_BOMBS, BG_STOPS, SKY, SKY_LOW, FLAG, LEVEL_CAP, PICK_POWER_MAX,
 } from './data/balance.js';
 import { World } from './world/world.js';
 import { Player } from './entity/player.js';
@@ -183,9 +183,11 @@ class Game {
   toast(msg, ms) { this.hud.toast(msg, ms); }
 
   // ── 등급 · 버프 ────────────────────────────────────────────────
+  // "곡괭이 등급" — 속도·범위의 최솟값. 은행 수수료·의료소 비용에만 쓰인다.
+  // 곡괭이 공격력(pickPower)과는 완전히 분리된 트랙이다.
   grade() { return Math.min(this.profile.upgrades.pickSpeed, this.profile.upgrades.pickRange); }
-  /** 전투 판정에만 쓰는 등급 — 플래그 버프 시 항상 최고 레벨보다 한 단계 위 (§3-1) */
-  effGrade() { return this.buff.t > 0 ? LEVEL_CAP + 1 : this.grade(); }
+  /** 곡괭이 공격력 — 플래그 버프 시 항상 그 최고 레벨보다 한 단계 위 */
+  pickPower() { return this.buff.t > 0 ? PICK_POWER_MAX + 1 : this.profile.upgrades.pickPower; }
   itemLevel(name) { return this.buff.t > 0 ? LEVEL_CAP + 1 : this.profile.upgrades[name]; }
   buffSonarTiles() { return this.buff.t > 0 ? this.buff.sonarM / M_PER_TILE : 0; }
 

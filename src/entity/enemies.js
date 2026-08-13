@@ -55,7 +55,7 @@ export class Enemies {
     if (cy <= 3 && cx >= -2 && cx <= 1) return;
     if (this.list.length > MAX_ACTIVE) return;
     const rnd = mulberry32((cx * 73856093) ^ (cy * 19349663) ^ this.game.world.gen.seed);
-    const n = rnd() < 0.45 ? 0 : 1 + Math.floor(rnd() * 2);
+    const n = rnd() < 0.34 ? 0 : 1 + Math.floor(rnd() * 2); // 기존보다 1.2배 많이
     const world = this.game.world;
     for (let i = 0; i < n; i++) {
       for (let tries = 0; tries < 24; tries++) {
@@ -64,8 +64,8 @@ export class Enemies {
         if (world.mat(tx, ty) !== MAT.AIR) continue;
         const h = world.gen.maxHardnessAround(tx, ty, 2);
         const pool = ['ant', 'bat', 'spider'];
-        if (h >= 2) pool.push('mole');
-        if (h >= 3) pool.push('centipede');
+        if (h >= 3) pool.push('mole'); // 경도 체계가 한 단계 올라서(tiles.js) 게이트도 +1
+        if (h >= 4) pool.push('centipede');
         const type = pool[Math.floor(rnd() * pool.length)];
         if ((type === 'ant' || type === 'spiderling') && !world.isSolid(tx, ty + 1)) continue;
         if (type === 'spider' && !world.isSolid(tx, ty - 1)) continue;
