@@ -107,7 +107,7 @@ export async function saveProfile(p) {
 export async function submitRun(run) {
   const token = anonToken();
   const runs = read(K.runs, []);
-  runs.push({ name: run.name, token, season: SEASON.id, depth: Math.round(run.depth), cats: run.cats, at: Date.now() });
+  runs.push({ name: run.name, token, season: SEASON.id, depth: Math.round(run.depth * 1000) / 1000, cats: run.cats, at: Date.now() });
   // 오프라인 폴백용 — 서버가 살아 있으면 리더보드는 서버 값을 쓰므로 최근 500건만 유지
   write(K.runs, runs.slice(-500));
   apiFetch('/api/runs', {

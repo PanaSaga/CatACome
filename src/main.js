@@ -337,7 +337,8 @@ class Game {
     this.camera.follow(this.player, dt);
     this.sfx.setUnderwater(this.player.submerged);
 
-    const d = Math.max(0, this.player.depthM);
+    // 랭킹에 올라가는 값이라 소수점 3자리 단위로만 생성한다 (부동소수 잔부 방지)
+    const d = Math.round(Math.max(0, this.player.depthM) * 1000) / 1000;
     if (d > this.run.maxDepth) this.run.maxDepth = d;
     this.sonar.prune(this.objects.validIds());
 

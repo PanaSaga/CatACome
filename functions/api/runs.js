@@ -13,7 +13,7 @@ export async function onRequestPost({ request, env }) {
     token,
     String(r.name ?? '무명').slice(0, 8),
     String(r.season ?? ''),
-    Math.max(0, Number(r.depth) || 0),
+    Math.round(Math.max(0, Number(r.depth) || 0) * 1000) / 1000, // 랭킹 값은 소수점 3자리 단위로만 저장
     Math.max(0, r.cats | 0),
     Date.now(),
   ).run();
