@@ -90,10 +90,11 @@ export const BOMB = {
   oreBonus: [0, 0.07, 0.14, 0.21, 0.29, 0.36, 0.43, 0.5, 0.62],
   fuse: [2.0, 1.86, 1.71, 1.57, 1.43, 1.29, 1.14, 1.0, 0.75],
 };
+// 드릴·레이저는 경도를 무시한다 — maxHardness 개념이 없다 (기반암 등 원래 불괴인
+// 재질만 beamTiles()가 막는다).
 export const DRILL = {
   length: [6, 7, 9, 10, 12, 13, 15, 16, 19], // 굴착 사거리(타일) — 레벨만큼 늘어난다
   width: [1, 1, 2, 2, 2, 2, 3, 3, 4],
-  maxHardness: [2, 2, 3, 3, 3, 3, 4, 4, 4],
 };
 // 드릴은 아이템 개수가 아니라 충전(칸)이다 — 홀드하는 동안 1초에 1칸씩 소모된다.
 // 최대 충전량도 레벨에 비례해 1→3칸으로 늘어난다 (§5-2).
@@ -168,13 +169,20 @@ export const PRICES = {
   flag: [5, 14, 40, 115, 330, 950, 3000],
   maxHp: [500, 2000],
 };
-export const SHOP_PRICE = { bomb: 8, drill: 25, laser: 40, flag: 15 };
+export const SHOP_PRICE = { bomb: 50, drill: 800, laser: 100, flag: 120 }; // 5은 · 8금 · 1금 · 1금2은
 export const SELL_RATE = 0.5;
 
+// 경도 체계가 한 단계씩 올랐으므로(tiles.js) 등급 게이트도 같이 밀었다 —
+// 여전히 "돌 있어야 희귀, 경암 있어야 전설"과 같은 의미다.
+// 상자 내용물 — 폭탄·드릴·레이저는 자주, 플래그는 드물게 나온다.
+export const ITEM_DROP_WEIGHTS = { bomb: 3, drill: 3, laser: 3, flag: 1 };
+// 포션은 예전엔 등급 불문 무조건 +1이었다 — 이제는 이 확률로만 나온다.
+export const POTION_DROP_CHANCE = 0.5;
+
 export const CHEST_GRADES = [
-  { grade: 1, name: '일반', p: 0.5, minH: 1 },
-  { grade: 2, name: '희귀', p: 0.3, minH: 2 },
-  { grade: 3, name: '전설', p: 0.2, minH: 3 },
+  { grade: 1, name: '일반', p: 0.5, minH: 2 },
+  { grade: 2, name: '희귀', p: 0.3, minH: 3 },
+  { grade: 3, name: '전설', p: 0.2, minH: 4 },
 ];
 
 // 청크당 등장 확률 — 고양이는 보물상자의 80% 밀도 (§5-4)

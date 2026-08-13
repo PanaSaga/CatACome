@@ -1,4 +1,6 @@
-// 소나 5단계 (§3-3). Lv1 흰 링만 · Lv2 색 구분 · Lv3 정거장 화살표 + 자동 토글 · Lv5 거리 병기
+// 소나 5단계 (§3-3). 대상별 색 구분은 레벨과 무관하게 항상 켜져 있다 —
+// 상자·고양이·플래그·시체·정거장이 이제 전부 암반에 가려 있어(§9), 소나 색이
+// 무엇을 팠는지 알아낼 유일한 힌트다. Lv3 정거장 화살표 + 자동 토글 · Lv5 거리 병기
 import {
   SONAR, SONAR_WAVE_TIME, SONAR_MOLE_PULL, SONAR_COLOR, TILE, M_PER_TILE,
   MARK_R, MARK_SPREAD, MARK_RINGS, MARK_PULSE_T,
@@ -98,14 +100,13 @@ export class Sonar {
       ctx.stroke();
     }
 
-    const colored = this.level >= 2;
     /**
      * 감지된 대상 표기 — 위치를 정확히 알려주는 핵 + 그 자리에서 최대 5배까지
      * 퍼져 나가는 링 여러 겹(초음파). 링은 계속 반복돼 파묻힌 대상이 어디 있는지
      * 멀리서도 눈에 잡힌다.
      */
     const mark = (x, y, kind, alpha = 1) => {
-      const col = colored ? (SONAR_COLOR[kind] || '#fff') : '#ffffff';
+      const col = SONAR_COLOR[kind] || '#fff';
       const sx = x - cam.x, sy = y - cam.y;
       // 퍼지는 링
       ctx.strokeStyle = col;

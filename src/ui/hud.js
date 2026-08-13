@@ -60,7 +60,7 @@ export class Hud {
     // 버프
     const bf = [];
     if (g.buff.t > 0) {
-      bf.push(`<div class="buff">전투 버프 6등급 · 소나 +${g.buff.sonarM}m — ${g.buff.t.toFixed(0)}s</div>`);
+      bf.push(`<div class="buff">전투 버프 만렙+1등급 · 소나 +${g.buff.sonarM}m — ${g.buff.t.toFixed(0)}s</div>`);
     }
     this.el.buffs.innerHTML = bf.join('');
 

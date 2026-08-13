@@ -172,9 +172,11 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 60;
   backdrop-filter: blur(2px);
 }
+.overlay { z-index: 60; }
+/* 시작 화면(오버레이) 위에서 랭킹·조작법 같은 패널을 열 때도 항상 그 위로 보이게 한다 */
+.modal { z-index: 70; }
 .overlay[hidden], .modal[hidden] { display: none; }
 
 .panel {

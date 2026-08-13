@@ -23,17 +23,18 @@ export const pack = (mat, ore = 0) => (mat & 15) | (ore << 4);
 export const matOf = (t) => t & 15;
 export const oreOf = (t) => t >> 4;
 
+// 경도를 한 단계씩 올렸다(1→2·2→3·3→4·4→5) — 흙조차 맨손으로는 만만치 않게.
 const HARDNESS = {
   [MAT.AIR]: 0,
-  [MAT.DIRT]: 1,
-  [MAT.STONE]: 2,
-  [MAT.HARD]: 3,
-  [MAT.OBS]: 4,
+  [MAT.DIRT]: 2,
+  [MAT.STONE]: 3,
+  [MAT.HARD]: 4,
+  [MAT.OBS]: 5,
   [MAT.BEDROCK]: Infinity,
   [MAT.WATER]: 0,
   [MAT.LAVA]: 0,
-  [MAT.SAND]: 2,
-  [MAT.DYNAMITE]: 1,
+  [MAT.SAND]: 3,
+  [MAT.DYNAMITE]: 2,
   [MAT.REINFORCED]: Infinity,
   [MAT.TUTWALL]: Infinity,
   [MAT.STATION]: Infinity,

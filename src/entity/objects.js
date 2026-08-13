@@ -2,6 +2,7 @@
 import {
   TILE, ZOOM, CHUNK, CHEST_GRADES, POTION, M_PER_TILE, FLAG,
   CHEST_DENSITY, CAT_DENSITY, CAT_CARRY_MAX, CAT_BASE_REWARD, CAT_BATCH_BONUS, DRILL_CHARGE_MAX,
+  ITEM_DROP_WEIGHTS, POTION_DROP_CHANCE,
 } from '../data/balance.js';
 import { hash2, mulberry32 } from '../world/rng.js';
 import { MAT, pack, isDiggable } from '../world/tiles.js';
@@ -12,7 +13,14 @@ export const HOUSE = { x0: 3, y0: -5, x1: 11, y1: -1, doorX: 7 };
 // 엘리베이터로 올라올 때 자기가 파 놓은 갱도로 떨어지는 일이 없다.
 // 굴착은 집에서 왼쪽으로 걸어 나온 x ≤ 1에서 시작한다.
 export const SURFACE_SPAWN = { x: HOUSE.doorX, y: -3 };
-const ITEM_KINDS = ['bomb', 'drill', 'laser', 'flag'];
+const ITEM_KIND_ENTRIES = Object.entries(ITEM_DROP_WEIGHTS);
+const ITEM_WEIGHT_TOTAL = ITEM_KIND_ENTRIES.reduce((s, [, w]) => s + w, 0);
+/** 가중치대로 아이템 종류를 뽑는다 — 폭탄·드릴·레이저가 플래그보다 잘 나온다 */
+function pickWeightedItem(rnd) {
+  let r = rnd() * ITEM_WEIGHT_TOTAL;
+  for (const [k, w] of ITEM_KIND_ENTRIES) { r -= w; if (r <= 0) return k; }
+  return ITEM_KIND_ENTRIES[0][0];
+}
 const INTERACT_R = 2.5; // 타일 — 상자·고양이·플래그·시체 공통 사거리
 const DROP_G = 620;     // px/s² — 발밑이 사라진 상자·고양이의 낙하 가속
 const DROP_MAX_V = 260; // px/s
@@ -323,7 +331,7 @@ export class Objects {
     const lines = [];
     const n = c.grade === 3 ? 3 : c.grade === 2 ? 2 + Math.floor(rnd() * 2) : 1 + Math.floor(rnd() * 2);
     for (let i = 0; i < n; i++) {
-      const k = ITEM_KINDS[Math.floor(rnd() * ITEM_KINDS.length)];
+      const k = pickWeightedItem(rnd); // 폭탄·드릴·레이저가 플래그보다 잘 나온다
       if (k === 'drill') {
         // 드릴은 개수가 아니라 충전(칸) — 레벨별 최대치에서 멈춘다 (§5-2)
         const cap = DRILL_CHARGE_MAX[g.profile.upgrades.drill - 1];
@@ -336,8 +344,10 @@ export class Objects {
       g.run.items[k] = (g.run.items[k] | 0) + amt;
       lines.push(`${k} +${amt}`);
     }
-    g.run.potions[c.grade] = (g.run.potions[c.grade] | 0) + 1;
-    lines.push(`${POTION[c.grade].name} 포션 +1`);
+    if (rnd() < POTION_DROP_CHANCE) { // 포션은 이제 확률 드롭 (§5-4)
+      g.run.potions[c.grade] = (g.run.potions[c.grade] | 0) + 1;
+      lines.push(`${POTION[c.grade].name} 포션 +1`);
+    }
     g.player.heal(1); // 모든 등급이 HP +1 (§5-7)
     lines.push('HP +1');
     g.sfx.play('chest');

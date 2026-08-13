@@ -14,7 +14,7 @@ const UPGRADES = [
   { key: 'bomb', name: '폭탄', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
   { key: 'drill', name: '드릴', max: LEVEL_CAP, detail: (lv) => `Lv${lv} — 최대 충전 ${DRILL_CHARGE_MAX[lv - 1]}칸` },
   { key: 'laser', name: '레이저', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
-  { key: 'flag', name: '플래그', max: LEVEL_CAP, detail: (lv) => `버프 ${FLAG.buffSec[lv - 1] / 60}분 · 소나 +${FLAG.sonarBonusM[lv - 1]}m` },
+  { key: 'flag', name: '플래그', max: LEVEL_CAP, detail: (lv) => `버프 ${(FLAG.buffSec[lv - 1] / 60).toFixed(1)}분 · 소나 +${FLAG.sonarBonusM[lv - 1]}m` },
   { key: 'maxHp', name: '최대 HP', max: 3, detail: (lv) => `HP ${HP_LEVELS[lv - 1]}` },
 ];
 
@@ -398,8 +398,8 @@ export class Panels {
         <header><h2>플래그 남기기</h2></header>
         <div class="body">
           <p class="dim" style="margin-top:0">${FLAG.msgLen}자 이내. 읽는 사람은 회복 +${FLAG.heal[g.profile.upgrades.flag - 1]},
-            전투 버프(6등급)와 소나 +${FLAG.sonarBonusM[g.profile.upgrades.flag - 1]}m를
-            ${FLAG.buffSec[g.profile.upgrades.flag - 1] / 60}분간 받는다.</p>
+            전투 버프(만렙+1등급)와 소나 +${FLAG.sonarBonusM[g.profile.upgrades.flag - 1]}m를
+            ${(FLAG.buffSec[g.profile.upgrades.flag - 1] / 60).toFixed(1)}분간 받는다.</p>
           <label>메시지<input id="flagMsg" maxlength="${FLAG.msgLen}" placeholder="여기 금맥 많음" /></label>
           <div class="err" id="flagErr"></div>
         </div>
@@ -426,7 +426,7 @@ export class Panels {
         <div class="body">
           <p style="font-size:17px;margin:4px 0 14px">“${esc(flag.msg)}”</p>
           ${effect
-        ? `<p class="ok">HP +${effect.heal} · 전투 버프 6등급 · 소나 +${effect.sonarM}m · ${effect.sec}초</p>`
+        ? `<p class="ok">HP +${effect.heal} · 전투 버프 만렙+1등급 · 소나 +${effect.sonarM}m · ${effect.sec}초</p>`
         : '<p class="dim">이 플래그의 버프는 이미 받았다. (플래그당 1회)</p>'}
         </div>
         <footer><span></span><button data-close class="primary">확인</button></footer>

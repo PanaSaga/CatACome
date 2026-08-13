@@ -195,7 +195,9 @@ export class Tools {
     this.drillCharge = 0;
     this.drillTick = 0;
     this.drilling = false;
+    this.drillEmptyWarned = false;
     this.laserCd = 0;
+    this.laserEmptyWarned = false;
     this.beamFx = null;
     this.beamFxT = 0;
   }
@@ -209,7 +211,9 @@ export class Tools {
     this.primed.length = 0;
     this.drillCharge = 0;
     this.drilling = false;
+    this.drillEmptyWarned = false;
     this.laserCd = 0;
+    this.laserEmptyWarned = false;
     this.beamFx = null;
   }
 
@@ -246,7 +250,8 @@ export class Tools {
     const held = input.mouseDown(0);
     const clicked = input.mouseClicked(0);
 
-    if (this.name !== 'drill') { this.drilling = false; this.drillCharge = 0; }
+    if (this.name !== 'drill') { this.drilling = false; this.drillCharge = 0; this.drillEmptyWarned = false; }
+    if (this.name !== 'laser') this.laserEmptyWarned = false;
 
     switch (this.name) {
       case 'pickaxe':
@@ -257,10 +262,11 @@ export class Tools {
         break;
       case 'drill':
         if (held) this.useDrill(dt, world);
-        else { this.drilling = false; this.drillCharge = 0; }
+        else { this.drilling = false; this.drillCharge = 0; this.drillEmptyWarned = false; }
         break;
       case 'laser':
         if (held && this.laserCd <= 0) this.fireLaser(world);
+        else if (!held) this.laserEmptyWarned = false;
         break;
       case 'flag':
         if (clicked) g.requestFlagPlacement();
@@ -409,13 +415,18 @@ export class Tools {
   }
 
   // ── 드릴 — 조준 방향으로 겨눈 채 홀드하면 주욱 파고든다 (§5-2) ────
+  // 경도를 무시한다 — 기반암 등 원래부터 불괴인 재질만 beamTiles()가 막는다.
   useDrill(dt, world) {
     const g = this.game;
-    if ((g.run.items.drill | 0) <= 0) { g.sfx.play('error'); g.toast('드릴 충전이 없다'); this.drilling = false; return; }
+    if ((g.run.items.drill | 0) <= 0) {
+      if (!this.drillEmptyWarned) { g.sfx.play('error'); g.toast('드릴 충전이 없다'); this.drillEmptyWarned = true; }
+      this.drilling = false;
+      return;
+    }
     const lv = g.itemLevel('drill');
     const a = g.aim;
     const p = g.player;
-    const beam = beamTiles(world, p.eyeX, p.eyeY, a.dx, a.dy, DRILL.length[lv - 1], DRILL.width[lv - 1], DRILL.maxHardness[lv - 1]);
+    const beam = beamTiles(world, p.eyeX, p.eyeY, a.dx, a.dy, DRILL.length[lv - 1], DRILL.width[lv - 1], Infinity);
     this.drilling = true;
     this.drillAngle = Math.atan2(a.dy, a.dx);
 
@@ -442,14 +453,20 @@ export class Tools {
   }
 
   // ── 레이저 — "피융!" 하고 순간이 아니라 짧게 뻗어나가는 빔 ───────
+  // 경도를 무시한다 — 기반암 등 원래부터 불괴인 재질만 beamTiles()가 막는다.
   fireLaser(world) {
     const g = this.game;
-    if ((g.run.items.laser | 0) <= 0) { g.sfx.play('error'); g.toast('레이저가 없다'); return; }
+    if ((g.run.items.laser | 0) <= 0) {
+      this.laserCd = LASER.cd; // 빈 채로 계속 홀드해도 매 프레임 재시도하지 않게 쿨을 건다
+      if (!this.laserEmptyWarned) { g.sfx.play('error'); g.toast('레이저가 없다'); this.laserEmptyWarned = true; }
+      return;
+    }
+    this.laserEmptyWarned = false;
     g.run.items.laser--;
     const lv = g.itemLevel('laser');
     const a = g.aim;
     const p = g.player;
-    const beam = beamTiles(world, p.eyeX, p.eyeY, a.dx, a.dy, LASER.range[lv - 1], LASER.width[lv - 1], Math.min(4, lv));
+    const beam = beamTiles(world, p.eyeX, p.eyeY, a.dx, a.dy, LASER.range[lv - 1], LASER.width[lv - 1], Infinity);
     this.laserCd = LASER.cd;
     this.beamFx = { kind: 'laser', ox: p.eyeX, oy: p.eyeY, dx: a.dx, dy: a.dy, len: beam.stopped };
     this.beamFxT = LASER_ANIM_T;
