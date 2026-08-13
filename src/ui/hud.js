@@ -1,5 +1,5 @@
 import { SLOTS, SLOT_ICON } from '../tool/tools.js';
-import { BREATH_MAX, GRAPPLE_RANGE, currencyText, STATION_DEPTHS, PICK_CD, CAT_CARRY_MAX } from '../data/balance.js';
+import { BREATH_MAX, GRAPPLE_RANGE, currencyText, STATION_DEPTHS, PICK_CD, CAT_CARRY_MAX, DRILL_CHARGE_MAX } from '../data/balance.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -78,6 +78,12 @@ export class Hud {
         const n = [1, 2, 3].reduce((a, k) => a + (g.run.potions[k] | 0), 0);
         lvEl.textContent = '';
         cEl.textContent = n || '';
+        el.classList.toggle('empty', n === 0);
+      } else if (name === 'drill') {
+        const n = g.run.items.drill | 0;
+        const cap = DRILL_CHARGE_MAX[g.profile.upgrades.drill - 1];
+        lvEl.textContent = 'L' + g.profile.upgrades.drill;
+        cEl.textContent = `${n}/${cap}`;
         el.classList.toggle('empty', n === 0);
       } else {
         const n = g.run.items[name] | 0;

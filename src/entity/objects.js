@@ -1,7 +1,7 @@
 // 고양이 · 보물상자 · 정거장 · 플래그 · 시체 · 지상의 집
 import {
   TILE, ZOOM, CHUNK, CHEST_GRADES, POTION, M_PER_TILE, FLAG,
-  CHEST_DENSITY, CAT_DENSITY, CAT_CARRY_MAX, CAT_BASE_REWARD, CAT_BATCH_BONUS,
+  CHEST_DENSITY, CAT_DENSITY, CAT_CARRY_MAX, CAT_BASE_REWARD, CAT_BATCH_BONUS, DRILL_CHARGE_MAX,
 } from '../data/balance.js';
 import { hash2, mulberry32 } from '../world/rng.js';
 import { MAT, pack, isDiggable } from '../world/tiles.js';
@@ -218,9 +218,9 @@ export class Objects {
     const pcx = Math.floor(p.cx / TILE / CHUNK), pcy = Math.floor(p.cy / TILE / CHUNK);
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) this.ensureChunk(pcx + dx, pcy + dy);
     this.updateDrops(dt);
-    // 근처 정거장은 소나 없이도 발견
+    // 근처 정거장은 소나 없이도 발견 — 파고들어 드러난(exposed) 뒤부터
     for (const s of this.stations) {
-      if (s.discovered) continue;
+      if (s.discovered || !this.exposed(s.x, s.y)) continue;
       if (Math.hypot(s.x - p.tileX, s.y - p.tileY) < 10) this.game.discoverStation(s);
     }
   }
@@ -232,10 +232,24 @@ export class Objects {
     return p.tileX >= HOUSE.x0 - 3 && p.tileX <= HOUSE.x1 + 3 && p.tileY >= HOUSE.y0 - 2 && p.tileY <= 2;
   }
 
+  /**
+   * 암반에 가려져 있는가 — 사방이 전부 막혀 있으면 아직 파 들어가지 않은
+   * 것이므로 화면에 드러나지 않는다. 소나로 위치만 알 수 있고, 실제로
+   * 파고들어야(인접 타일 하나라도 열려야) 눈에 보이고 상호작용도 된다 (§9).
+   */
+  exposed(tx, ty) {
+    const world = this.game.world;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (!world.isSolid(tx + dx, ty + dy)) return true;
+    }
+    return false;
+  }
+
   nearestStation(r = 6) {
     const p = this.game.player;
     let best = null, bd = r;
     for (const s of this.stations) {
+      if (!this.exposed(s.x, s.y)) continue;
       const d = Math.hypot(s.x - p.tileX, s.y - p.tileY);
       if (d <= bd) { bd = d; best = s; }
     }
@@ -243,29 +257,32 @@ export class Objects {
   }
 
   /**
-   * 지금 E가 실제로 집을 대상. 우선순위: 정거장 → 집 → 상자 → 고양이 → 플래그.
-   * interact()와 화면의 [E] 안내가 같은 답을 보게 하려고 한곳에 모았다.
+   * 지금 E가 실제로 집을 대상. 우선순위: 상자 → 고양이 → 플래그 → 시체 → 정거장 → 집.
+   * 상자·고양이·플래그·시체가 정거장과 겹쳐 있어도 이쪽을 먼저 집도록,
+   * 사거리가 넓은 정거장을 뒤로 미뤘다. interact()와 화면의 [E] 안내가
+   * 같은 답을 보게 하려고 한곳에 모았다.
    */
   interactTarget() {
     const p = this.game.player;
-    const st = this.nearestStation(6);
-    if (st) return { kind: 'station', ref: st };
-    if (this.nearHouse()) return { kind: 'house', ref: null };
     for (const c of this.chests) {
-      if (c.opened) continue;
+      if (c.opened || !this.exposed(c.x, c.y)) continue;
       if (this.near(c.x, c.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'chest', ref: c };
     }
     for (const c of this.cats) {
-      if (c.carried) continue;
+      if (c.carried || !this.exposed(c.x, c.y)) continue;
       if (this.near(c.x, c.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'cat', ref: c };
     }
     for (const f of this.flags) {
+      if (!this.exposed(f.x, f.y)) continue;
       if (this.near(f.x, f.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'flag', ref: f };
     }
     for (const c of this.corpses) {
-      if (c.looted) continue;
+      if (c.looted || !this.exposed(c.x, c.y)) continue;
       if (this.near(c.x, c.y, p.tileX, p.tileY, INTERACT_R)) return { kind: 'corpse', ref: c };
     }
+    const st = this.nearestStation(6);
+    if (st) return { kind: 'station', ref: st };
+    if (this.nearHouse()) return { kind: 'house', ref: null };
     return null;
   }
 
@@ -307,6 +324,14 @@ export class Objects {
     const n = c.grade === 3 ? 3 : c.grade === 2 ? 2 + Math.floor(rnd() * 2) : 1 + Math.floor(rnd() * 2);
     for (let i = 0; i < n; i++) {
       const k = ITEM_KINDS[Math.floor(rnd() * ITEM_KINDS.length)];
+      if (k === 'drill') {
+        // 드릴은 개수가 아니라 충전(칸) — 레벨별 최대치에서 멈춘다 (§5-2)
+        const cap = DRILL_CHARGE_MAX[g.profile.upgrades.drill - 1];
+        const before = g.run.items.drill | 0;
+        g.run.items.drill = Math.min(cap, before + 1);
+        lines.push(`드릴 충전 +${g.run.items.drill - before}`);
+        continue;
+      }
       const amt = k === 'bomb' ? 2 : 1;
       g.run.items[k] = (g.run.items[k] | 0) + amt;
       lines.push(`${k} +${amt}`);
@@ -388,8 +413,9 @@ export class Objects {
       this.drawPrompt(ctx, hx + hw / 2, hy - 32, '[E] 집');
     }
 
-    // 정거장
+    // 정거장 — 파고들어 드러나기 전까지는 암반에 가려 보이지 않는다 (§9)
     for (const s of this.stations) {
+      if (!this.exposed(s.x, s.y)) continue;
       const x = s.x * TILE - cam.x, y = s.y * TILE - cam.y;
       if (x < -200 || x > cam.w + 200 || y < -200 || y > cam.h + 200) continue;
       ctx.fillStyle = '#b9c2d8';
@@ -406,9 +432,9 @@ export class Objects {
       ctx.textAlign = 'left';
     }
 
-    // 보물상자
+    // 보물상자 — 파고들어 드러나기 전까지는 암반에 가려 보이지 않는다 (§9)
     for (const c of this.chests) {
-      if (c.opened) continue;
+      if (c.opened || !this.exposed(c.x, c.y)) continue;
       const x = c.x * TILE - cam.x, y = c.y * TILE + (c.oy || 0) - cam.y;
       const col = c.grade === 3 ? '#f2c437' : c.grade === 2 ? '#7ab8f0' : '#b98a5a';
       ctx.fillStyle = '#4a3524';
@@ -426,9 +452,9 @@ export class Objects {
       }
     }
 
-    // 고양이
+    // 고양이 — 파고들어 드러나기 전까지는 암반에 가려 보이지 않는다 (§9)
     for (const c of this.cats) {
-      if (c.carried) continue;
+      if (c.carried || !this.exposed(c.x, c.y)) continue;
       const x = c.x * TILE - cam.x, y = c.y * TILE + (c.oy || 0) - cam.y;
       this.drawCat(ctx, x, y, 1, c.breed);
       if (target && target.kind === 'cat' && target.ref === c) {
@@ -444,8 +470,9 @@ export class Objects {
       this.drawCat(ctx, p.x - cam.x + (i === 0 ? -2 : 6), p.y - cam.y - 12 - i * 3, 0.85, c.breed);
     });
 
-    // 플래그
+    // 플래그 — 파고들어 드러나기 전까지는 암반에 가려 보이지 않는다 (§9)
     for (const f of this.flags) {
+      if (!this.exposed(f.x, f.y)) continue;
       const x = f.x * TILE - cam.x, y = f.y * TILE - cam.y;
       ctx.fillStyle = '#d8d0c0';
       ctx.fillRect(x + 7, y - 6, 2, 22);
@@ -461,9 +488,9 @@ export class Objects {
       }
     }
 
-    // 다른 플레이어의 시체 — 무덤 모양 (§10)
+    // 다른 플레이어의 시체 — 무덤 모양 (§10), 파고들어 드러나기 전까지는 안 보인다 (§9)
     for (const c of this.corpses) {
-      if (c.looted) continue;
+      if (c.looted || !this.exposed(c.x, c.y)) continue;
       const x = c.x * TILE - cam.x, y = c.y * TILE - cam.y;
       this.drawGrave(ctx, x, y);
       if (target && target.kind === 'corpse' && target.ref === c) {

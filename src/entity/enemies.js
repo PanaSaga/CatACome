@@ -39,7 +39,7 @@ export class Enemies {
       x: tx * TILE + (TILE - w) / 2, y: ty * TILE + (TILE - h) / 2,
       vx: 0, vy: 0, w, h, dir: Math.random() < 0.5 ? -1 : 1,
       t: 0, state: type === 'spider' ? 'hang' : 'idle',
-      pending: 0, hurtT: 0,
+      pending: 0, hurtT: 0, dot: 0,
     };
     this.list.push(e);
     return e;
@@ -121,6 +121,20 @@ export class Enemies {
     const s = this.tileSet(tiles);
     for (const e of [...this.list]) {
       if (this.overlapsTiles(e, s)) this.hurt(e, dmg);
+    }
+  }
+
+  /** 드릴 지속 피해 — 소수점 누적 (§5-2) */
+  hitTilesDot(tiles, amount) {
+    const s = this.tileSet(tiles);
+    for (const e of [...this.list]) {
+      if (!this.overlapsTiles(e, s)) continue;
+      e.dot += amount;
+      if (e.dot >= 1) {
+        const n = Math.floor(e.dot);
+        e.dot -= n;
+        this.hurt(e, n);
+      }
     }
   }
 

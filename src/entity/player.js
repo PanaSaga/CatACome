@@ -61,7 +61,6 @@ export class Player {
     this.swingT = 0;
     this.swingAng = 0;
     this.suppressJump = false;
-    this.dashing = 0; // 드릴 돌진 중 — Tools가 위치를 직접 몬다 (§5-2)
     this.dead = false;
   }
 
@@ -138,13 +137,6 @@ export class Player {
     this.invuln = Math.max(0, this.invuln - dt);
     this.jumpLock = Math.max(0, this.jumpLock - dt);
     this.swingT = Math.max(0, this.swingT - dt);
-
-    // ── 드릴 돌진 — Tools.update()가 위치·파괴를 직접 몬다 (§5-2) ──
-    if (this.dashing > 0) {
-      this.dashing = Math.max(0, this.dashing - dt);
-      return;
-    }
-
     this.sampleLiquids(world);
 
     // ── 매몰 ────────────────────────────────────────────────────

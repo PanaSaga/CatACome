@@ -1,9 +1,15 @@
 // 곡괭이 · 폭탄 · 드릴 · 레이저 · 플래그 · 포션
 import {
   TILE, PICK_CD, PICK_REACH, PICK_HIT_R, GRADE_DMG, ITEM_DMG,
-  BOMB, DRILL, LASER, FLAG, POTION, DYNAMITE,
+  BOMB, DRILL, DRILL_DRAIN_SEC, LASER, FLAG, POTION, DYNAMITE,
 } from '../data/balance.js';
 import { MAT, matOf, hardnessOf, isDiggable, isBlastable, MAT_COLOR } from '../world/tiles.js';
+
+// 레이저 발사 애니메이션 — 빔이 순간이 아니라 짧게 자라났다 사그라든다 ("피융!")
+const LASER_GROW_T = 0.07;
+const LASER_HOLD_T = 0.05;
+const LASER_FADE_T = 0.16;
+const LASER_ANIM_T = LASER_GROW_T + LASER_HOLD_T + LASER_FADE_T;
 
 export const SLOTS = ['pickaxe', 'bomb', 'drill', 'laser', 'flag', 'potion'];
 
@@ -186,7 +192,9 @@ export class Tools {
     this.multiCount = 0;
     this.bombs = [];
     this.primed = [];
-    this.drillDash = null;
+    this.drillCharge = 0;
+    this.drillTick = 0;
+    this.drilling = false;
     this.laserCd = 0;
     this.beamFx = null;
     this.beamFxT = 0;
@@ -199,7 +207,8 @@ export class Tools {
     this.multiCount = 0;
     this.bombs.length = 0;
     this.primed.length = 0;
-    this.drillDash = null;
+    this.drillCharge = 0;
+    this.drilling = false;
     this.laserCd = 0;
     this.beamFx = null;
   }
@@ -220,12 +229,12 @@ export class Tools {
 
     this.updateBombs(dt, world);
     this.updatePrimed(dt);
-    if (this.drillDash) this.updateDrillDash(dt, world); // 슬롯을 바꿔도 돌진은 끝까지 간다
 
-    if (g.player.dead) return;
+    if (g.player.dead) { this.drilling = false; return; }
 
     // 매몰 탈출 — 좌클릭 연타
     if (g.player.buried > 0) {
+      this.drilling = false;
       if (input.mouseClicked(0)) {
         g.player.buried -= 1;
         g.sfx.dig(2);
@@ -234,10 +243,10 @@ export class Tools {
       return;
     }
 
-    if (this.drillDash) return; // 돌진 중에는 다른 조작을 받지 않는다
-
     const held = input.mouseDown(0);
     const clicked = input.mouseClicked(0);
+
+    if (this.name !== 'drill') { this.drilling = false; this.drillCharge = 0; }
 
     switch (this.name) {
       case 'pickaxe':
@@ -247,7 +256,8 @@ export class Tools {
         if (clicked) this.throwBomb();
         break;
       case 'drill':
-        if (clicked) this.useDrill();
+        if (held) this.useDrill(dt, world);
+        else { this.drilling = false; this.drillCharge = 0; }
         break;
       case 'laser':
         if (held && this.laserCd <= 0) this.fireLaser(world);
@@ -398,67 +408,40 @@ export class Tools {
     }
   }
 
-  // ── 드릴 — 조준 방향으로 무적 돌진하며 땅을 뚫는다 (§5-2) ────────
-  useDrill() {
+  // ── 드릴 — 조준 방향으로 겨눈 채 홀드하면 주욱 파고든다 (§5-2) ────
+  useDrill(dt, world) {
     const g = this.game;
-    if ((g.run.items.drill | 0) <= 0) { g.sfx.play('error'); g.toast('드릴이 없다'); return; }
-    g.run.items.drill--;
+    if ((g.run.items.drill | 0) <= 0) { g.sfx.play('error'); g.toast('드릴 충전이 없다'); this.drilling = false; return; }
     const lv = g.itemLevel('drill');
-    const p = g.player;
     const a = g.aim;
-    const len = Math.hypot(a.dx, a.dy) || 1;
-    const dur = DRILL.duration[lv - 1];
-    this.drillDash = {
-      dx: a.dx / len, dy: a.dy / len,
-      dist: DRILL.length[lv - 1] * TILE, traveled: 0,
-      dur, width: DRILL.width[lv - 1], maxHardness: DRILL.maxHardness[lv - 1],
-      dmg: ITEM_DMG[lv - 1], tick: 0,
-    };
-    p.dashing = dur;
-    p.invuln = Math.max(p.invuln, dur + 0.3);
-    g.sfx.play('drill');
-    g.toast('드릴 돌진!', 800);
-  }
-
-  /** 매 프레임 위치를 직접 밀며 앞을 파낸다. 더 파낼 수 없는 경도를 만나면 멈춘다. */
-  updateDrillDash(dt, world) {
-    const g = this.game;
-    const d = this.drillDash;
     const p = g.player;
-    const speed = d.dist / d.dur;
-    let step = Math.min(speed * dt, d.dist - d.traveled);
+    const beam = beamTiles(world, p.eyeX, p.eyeY, a.dx, a.dy, DRILL.length[lv - 1], DRILL.width[lv - 1], DRILL.maxHardness[lv - 1]);
+    this.drilling = true;
+    this.drillAngle = Math.atan2(a.dy, a.dx);
 
-    const half = Math.max(0, Math.floor((d.width - 1) / 2));
-    const breakAround = (cx, cy) => {
-      const tiles = [];
-      for (let oy = -half; oy <= half; oy++) for (let ox = -half; ox <= half; ox++) tiles.push([cx + ox, cy + oy]);
-      let blocked = false;
-      for (const [tx, ty] of tiles) {
-        const m = world.mat(tx, ty);
-        if (m === MAT.AIR || m === MAT.WATER || m === MAT.LAVA) continue;
-        if (isDiggable(m) && hardnessOf(m) <= d.maxHardness) continue;
-        blocked = true;
+    // 홀드 지속시간(초)당 1칸 소모
+    this.drillCharge += dt;
+    if (this.drillCharge >= DRILL_DRAIN_SEC) { this.drillCharge -= DRILL_DRAIN_SEC; g.run.items.drill--; }
+
+    g.enemies.hitTilesDot(beam.tiles, ITEM_DMG[lv - 1] * dt);
+    this.drillTick -= dt;
+    if (this.drillTick <= 0) {
+      this.drillTick = 0.1;
+      g.sfx.play('drill', 1 + (Math.random() - 0.5) * 0.16);
+      g.enemies.onNoise(1);
+      let broke = 0;
+      for (const [x, y] of beam.tiles) {
+        if (broke >= 2) break;
+        if (g.world.mat(x, y) === MAT.AIR) continue;
+        if (this.breakTiles([[x, y]], 0)) broke++;
       }
-      if (blocked) return false;
-      this.breakTiles(tiles, 0);
-      return true;
-    };
-
-    const cx = Math.floor(p.cx / TILE), cy = Math.floor(p.cy / TILE);
-    if (!breakAround(cx, cy)) step = 0; // 더 파낼 수 없는 경도 — 그 자리에서 멈춘다
-
-    p.x += d.dx * step;
-    p.y += d.dy * step;
-    d.traveled += step;
-
-    d.tick -= dt;
-    if (d.tick <= 0) { d.tick = 0.1; g.sfx.play('drill', 1 + (Math.random() - 0.5) * 0.16); g.enemies.onNoise(1); }
-    g.enemies.hitCircle(p.cx, p.cy, d.width * TILE, d.dmg * dt * 4);
-
-    if (step <= 0 || d.traveled >= d.dist) this.drillDash = null;
+      const len = Math.hypot(a.dx, a.dy) || 1;
+      const tipX = p.eyeX + (a.dx / len) * beam.stopped * TILE, tipY = p.eyeY + (a.dy / len) * beam.stopped * TILE;
+      g.particles.spawn(tipX, tipY, 3, '#c8b9a0', { spread: 1.6, life: 0.3, size: 2 });
+    }
   }
 
-  // ── 레이저 ─────────────────────────────────────────────────────
+  // ── 레이저 — "피융!" 하고 순간이 아니라 짧게 뻗어나가는 빔 ───────
   fireLaser(world) {
     const g = this.game;
     if ((g.run.items.laser | 0) <= 0) { g.sfx.play('error'); g.toast('레이저가 없다'); return; }
@@ -469,8 +452,10 @@ export class Tools {
     const beam = beamTiles(world, p.eyeX, p.eyeY, a.dx, a.dy, LASER.range[lv - 1], LASER.width[lv - 1], Math.min(4, lv));
     this.laserCd = LASER.cd;
     this.beamFx = { kind: 'laser', ox: p.eyeX, oy: p.eyeY, dx: a.dx, dy: a.dy, len: beam.stopped };
-    this.beamFxT = 0.12;
+    this.beamFxT = LASER_ANIM_T;
     g.sfx.play('laser');
+    g.particles.ring(p.eyeX, p.eyeY, 10, '#ff5566', 4);
+    g.particles.spawn(p.eyeX, p.eyeY, 6, '#ffd0d8', { spread: 3, life: 0.18, size: 2 });
     g.enemies.hitTiles(beam.tiles, ITEM_DMG[lv - 1]);
     this.breakTiles(beam.tiles, LASER.oreBonus[lv - 1]);
   }
@@ -506,19 +491,76 @@ export class Tools {
       ctx.fillStyle = blink ? '#ff5545' : '#ffd0a0';
       ctx.fillRect(d.x * TILE - cam.x + 3, d.y * TILE - cam.y + 3, 10, 10);
     }
-    // 빔
+    // 레이저 — 자라났다 사그라드는 빔 ("피융!")
     if (this.beamFxT > 0 && this.beamFx) {
       const b = this.beamFx;
+      const elapsed = LASER_ANIM_T - this.beamFxT;
+      const growT = Math.min(1, elapsed / LASER_GROW_T);
+      const ease = 1 - Math.pow(1 - growT, 3);
+      const curLen = b.len * ease;
+      let alpha = 1;
+      if (elapsed > LASER_GROW_T + LASER_HOLD_T) {
+        const fadeT = (elapsed - LASER_GROW_T - LASER_HOLD_T) / LASER_FADE_T;
+        alpha = Math.max(0, 1 - fadeT);
+      }
       const len = Math.hypot(b.dx, b.dy) || 1;
-      const ex = b.ox + (b.dx / len) * b.len * TILE;
-      const ey = b.oy + (b.dy / len) * b.len * TILE;
-      ctx.strokeStyle = b.kind === 'laser' ? 'rgba(255,80,120,0.9)' : 'rgba(160,220,255,0.8)';
-      ctx.lineWidth = b.kind === 'laser' ? 4 : 6;
+      const ex = b.ox + (b.dx / len) * curLen * TILE;
+      const ey = b.oy + (b.dy / len) * curLen * TILE;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = 'rgba(255,80,120,0.5)';
+      ctx.lineWidth = 8;
       ctx.beginPath();
       ctx.moveTo(b.ox - cam.x, b.oy - cam.y);
       ctx.lineTo(ex - cam.x, ey - cam.y);
       ctx.stroke();
+      ctx.strokeStyle = '#fff0f4';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(b.ox - cam.x, b.oy - cam.y);
+      ctx.lineTo(ex - cam.x, ey - cam.y);
+      ctx.stroke();
+      if (growT < 1) {
+        ctx.fillStyle = 'rgba(255,220,230,0.9)';
+        ctx.beginPath();
+        ctx.arc(b.ox - cam.x, b.oy - cam.y, 6 * (1 - growT) + 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
       ctx.lineWidth = 1;
+    }
+
+    // 드릴 — 장착 중이면 항상 조준 방향으로 겨눈다
+    if (this.name === 'drill' && !g.player.dead) {
+      const p = g.player;
+      const aim = g.aim;
+      const ang = Math.atan2(aim.dy, aim.dx);
+      const sx = p.x - cam.x, sy = p.y - cam.y;
+      const jitter = this.drilling ? (Math.random() - 0.5) * 1.6 : 0;
+      ctx.save();
+      ctx.translate(sx + 8, sy + 14);
+      ctx.rotate(ang);
+      ctx.translate(0, jitter);
+      ctx.fillStyle = '#3a2b20';
+      ctx.fillRect(-2, -3, 10, 6); // 손잡이
+      ctx.fillStyle = '#8a5a3c';
+      ctx.fillRect(6, -2, 8, 4); // 자루
+      ctx.fillStyle = '#c9ccd8';
+      ctx.beginPath();
+      ctx.moveTo(13, -4); ctx.lineTo(13, 4); ctx.lineTo(20, 0);
+      ctx.closePath();
+      ctx.fill(); // 뾰족한 드릴 비트
+      if (this.drilling) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 2; i++) {
+          ctx.beginPath();
+          ctx.moveTo(13, -3 + i * 3);
+          ctx.lineTo(18, -0.5 + i * 1.5);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
 
     // 조준 · 대상 영역

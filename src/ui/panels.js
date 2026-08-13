@@ -2,7 +2,7 @@
 // 패널이 열려 있는 동안 게임 조작은 잠기고, 항목은 전부 마우스 클릭으로 선택한다 (§2)
 import {
   PRICES, SHOP_PRICE, SELL_RATE, POTION, FLAG, GRAPPLE_RANGE, SONAR, LEVEL_CAP, CAT_CARRY_MAX,
-  PICK_CD, HP_LEVELS, clinicCost, clinicCap, bankFeeRate, currencyText, M_PER_TILE,
+  PICK_CD, HP_LEVELS, DRILL_CHARGE_MAX, clinicCost, clinicCap, bankFeeRate, currencyText, M_PER_TILE,
 } from '../data/balance.js';
 import { fetchLeaderboard, moderate, BACKEND, SEASON } from '../net/api.js';
 
@@ -12,7 +12,7 @@ const UPGRADES = [
   { key: 'sonar', name: '소나', max: LEVEL_CAP, detail: (lv) => `반경 ${(SONAR[lv - 1].r * M_PER_TILE)}m · 쿨 ${SONAR[lv - 1].cd}s${lv >= 3 ? ' · 자동' : ''}` },
   { key: 'grapple', name: '갈고리', max: 4, detail: (lv) => `사거리 ${GRAPPLE_RANGE[lv - 1]}타일` },
   { key: 'bomb', name: '폭탄', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
-  { key: 'drill', name: '드릴', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
+  { key: 'drill', name: '드릴', max: LEVEL_CAP, detail: (lv) => `Lv${lv} — 최대 충전 ${DRILL_CHARGE_MAX[lv - 1]}칸` },
   { key: 'laser', name: '레이저', max: LEVEL_CAP, detail: (lv) => `Lv${lv}` },
   { key: 'flag', name: '플래그', max: LEVEL_CAP, detail: (lv) => `버프 ${FLAG.buffSec[lv - 1] / 60}분 · 소나 +${FLAG.sonarBonusM[lv - 1]}m` },
   { key: 'maxHp', name: '최대 HP', max: 3, detail: (lv) => `HP ${HP_LEVELS[lv - 1]}` },
@@ -118,6 +118,17 @@ export class Panels {
         const have = g.run.items[it.key] | 0;
         const buy = SHOP_PRICE[it.key];
         const sell = Math.floor(buy * SELL_RATE);
+        if (it.key === 'drill') {
+          // 드릴은 개수가 아니라 충전(칸) — 레벨별 최대치에서 멈추고, 한 번에 1칸만 산다
+          const cap = DRILL_CHARGE_MAX[g.profile.upgrades.drill - 1];
+          const full = have >= cap;
+          return `<tr><td>${it.name} <span class="tag dim">Lv${g.profile.upgrades.drill} · 충전</span></td>` +
+            `<td class="num mono">${have}/${cap}</td><td class="num mono">${buy}</td><td class="num mono">${sell}</td>` +
+            `<td class="num">
+               <button class="small" data-shopbuy="${it.key}" data-n="1" ${!full && g.run.copper >= buy ? '' : 'disabled'}>+1</button>
+               <button class="small" data-shopsell="${it.key}" ${have > 0 ? '' : 'disabled'}>−1</button>
+             </td></tr>`;
+        }
         return `<tr><td>${it.name} <span class="tag dim">Lv${g.profile.upgrades[it.key]}</span></td>` +
           `<td class="num mono">${have}</td><td class="num mono">${buy}</td><td class="num mono">${sell}</td>` +
           `<td class="num">
@@ -207,6 +218,16 @@ export class Panels {
     body.querySelectorAll('[data-shopbuy]').forEach((b) => b.addEventListener('click', () => {
       const key = b.dataset.shopbuy;
       const n = +b.dataset.n;
+      if (key === 'drill') {
+        const cap = DRILL_CHARGE_MAX[g.profile.upgrades.drill - 1];
+        const have = g.run.items.drill | 0;
+        if (have >= cap || g.run.copper < SHOP_PRICE.drill) { g.sfx.play('error'); return; }
+        g.run.copper -= SHOP_PRICE.drill;
+        g.run.items.drill = Math.min(cap, have + 1);
+        g.sfx.play('buy');
+        this.openHouse('shop');
+        return;
+      }
       const cost = SHOP_PRICE[key] * n;
       if (g.run.copper < cost) { g.sfx.play('error'); return; }
       g.run.copper -= cost;
@@ -297,7 +318,11 @@ export class Panels {
           <table><tbody>
             <tr><td>휴대 재화 <span class="tag dim">사망 시 소실</span></td><td class="num mono gold">${currencyText(g.run.copper)}</td></tr>
             <tr><td>은행 예치금 <span class="tag dim">사망해도 보존</span></td><td class="num mono">${currencyText(g.profile.bank)}</td></tr>
-            ${SHOP_ITEMS.map((i) => `<tr><td>${i.name} <span class="tag dim">Lv${g.profile.upgrades[i.key]}</span></td><td class="num mono">${g.run.items[i.key] | 0}</td></tr>`).join('')}
+            ${SHOP_ITEMS.map((i) => {
+              const have = g.run.items[i.key] | 0;
+              const val = i.key === 'drill' ? `${have}/${DRILL_CHARGE_MAX[g.profile.upgrades.drill - 1]}` : have;
+              return `<tr><td>${i.name} <span class="tag dim">Lv${g.profile.upgrades[i.key]}</span></td><td class="num mono">${val}</td></tr>`;
+            }).join('')}
             ${[1, 2, 3].map((k) => `<tr><td>${POTION[k].name} 포션 <span class="tag dim">HP +${POTION[k].heal}</span></td><td class="num mono">${g.run.potions[k] | 0}</td></tr>`).join('')}
             <tr><td>운반 중인 고양이</td><td class="num mono">${g.run.cats.length} / ${CAT_CARRY_MAX}</td></tr>
             <tr><td>이번 런 인계</td><td class="num mono">${g.run.catsDelivered}</td></tr>
@@ -324,9 +349,12 @@ export class Panels {
             <tr><td class="mono">E</td><td>상호작용 — 집 · 정거장 · 상자 · 고양이 업기 · 플래그 · 시체</td></tr>
             <tr><td class="mono">Tab</td><td>인벤토리 · Esc 닫기</td></tr>
           </tbody></table>
-          <p class="dim" style="margin-top:12px">바라보는 방향은 항상 마우스 커서 방향이다. 드릴은 조준 방향으로 무적
-            돌진하며 땅을 뚫고, 레이저는 조준 방향으로 땅을 관통한다 — 둘 다 레벨이
-            오르면 사거리가 늘어난다.</p>
+          <p class="dim" style="margin-top:12px">바라보는 방향은 항상 마우스 커서 방향이다. 드릴은 조준 방향으로 겨눈 채
+            홀드하면 앞을 파고들고, 레이저는 조준 방향으로 땅을 관통한다 — 둘 다 레벨이
+            오르면 사거리가 늘어난다. 드릴은 개수가 아니라 충전(최대 레벨별 1~3칸)이라
+            홀드 1초마다 1칸씩 줄어든다.</p>
+          <p class="dim">상자·고양이·플래그·다른 사람의 시체·정거장은 암반에 가려 보이지 않는다
+            — 소나로 위치를 잡고 그 방향을 파고들어야 드러난다.</p>
         </div>
         <footer><span></span><button data-close class="primary">확인</button></footer>
       </div>`);
